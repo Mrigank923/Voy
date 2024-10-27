@@ -1,32 +1,33 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
 User = get_user_model()
 
-class UserRegistrationSerializer(serializers.ModelSerializer):
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'email', 'first_name', 'last_name')
+
+class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
-    password2 = serializers.CharField(write_only=True, required=True)
+    confirm_password = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ('email', 'password', 'password2')
+        fields = ('email', 'password', 'confirm_password', 'first_name', 'last_name')
 
     def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
+        if attrs['password'] != attrs['confirm_password']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
         return attrs
 
     def create(self, validated_data):
-        user = User.objects.create(
-            email=validated_data['email']
-        )
-        user.set_password(validated_data['password'])
-        user.save()
-        return user
+        validated_data.pop('confirm_password')
+        return User.objects.create_user(**validated_data)
 
+<<<<<<< HEAD
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -44,3 +45,8 @@ class ForgotPasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError("User with this email does not exist.")
         return {"user": user}
 
+=======
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+>>>>>>> origin/auth
