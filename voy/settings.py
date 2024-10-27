@@ -152,12 +152,13 @@ SIMPLE_JWT = {
 
 AUTH_USER_MODEL = 'authentication.User'
 
-
-
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'voyreply@gmail.com'
-EMAIL_HOST_PASSWORD = 'your_email_password'
-DEFAULT_FROM_EMAIL = 'voyreply@gmail.com'
+EMAIL_HOST = 'smtp.gmail.com'                 # SMTP server
+EMAIL_PORT = 587                              # Port for TLS (587 for Gmail)
+EMAIL_USE_TLS = True                          # Use TLS for encryption
+EMAIL_HOST_USER = 'voyreply@gmail.com'        # Your Gmail address
+EMAIL_HOST_PASSWORD = 'your_email_password'   # Your Gmail password or an app-specific password
+DEFAULT_FROM_EMAIL = 'voyreply@gmail.com'     # Default sender email
+
+
+

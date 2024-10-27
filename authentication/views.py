@@ -14,6 +14,7 @@ from django.contrib.sites.shortcuts import get_current_site
 from django.urls import reverse
 from .serializers import ForgotPasswordSerializer
 
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -58,14 +59,8 @@ class LoginView(APIView):
                 'status': 'error',
                 'message': 'Invalid credentials'
             }, status=status.HTTP_401_UNAUTHORIZED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUES)
 
-
-<<<<<<< HEAD
-#     def post(self, request):
-#         return Response({
-#             "message": "Password reset functionality will be implemented in future"
-#         }, status=status.HTTP_501_NOT_IMPLEMENTED)
 
 
 class ForgotPasswordView(APIView):
@@ -83,11 +78,19 @@ class ForgotPasswordView(APIView):
             send_mail(
                 subject="Password Reset",
                 message=f"Click the link to reset your password: {reset_link}",
-                from_email="voyreply@gmail.com",
+                from_email="voyreply@egmail.com",
                 recipient_list=[user.email],
             )
             return Response({"message": "Password reset link sent to your email."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     
-=======
->>>>>>> origin/auth
+class UserChangePasswordView(APIView):
+    permission_classes=[AllowAny]
+    def post(self,request,format=None):
+        serializer=UserChangePasswordSerializer(data=request.data,context={'user':request.user})
+        if serializer.is_valid(raise_exception=True):
+            return Response({'msg':'Password cahnges successfully'},status=status.HTTP_200_OK)
+        return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
+
+
