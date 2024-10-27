@@ -5,6 +5,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer
+from django.http import JsonResponse
+
+
+# this is just a placeholder view for the deault path
+def home_view(request):
+    return JsonResponse({"message": "Welcome to the app!"})
+
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
