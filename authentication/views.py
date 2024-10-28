@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer
+<<<<<<< HEAD
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.core.mail import send_mail
@@ -16,6 +17,14 @@ from .models import OTP
 
 
 
+=======
+from django.http import JsonResponse
+
+
+# this is just a placeholder view for the deault path
+def home_view(request):
+    return JsonResponse({"message": "Welcome to the app!"})
+>>>>>>> auth
 
 
 class RegisterView(APIView):
