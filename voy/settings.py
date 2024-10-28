@@ -28,7 +28,8 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS =  ['DESKTOP-BRPE7R0', 'localhost', '127.0.0.1']
+
 
 
 # Application definition
@@ -136,7 +137,7 @@ REST_FRAMEWORK = {
 
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=900),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -152,13 +153,13 @@ SIMPLE_JWT = {
 
 AUTH_USER_MODEL = 'authentication.User'
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'                 # SMTP server
-EMAIL_PORT = 587                              # Port for TLS (587 for Gmail)
-EMAIL_USE_TLS = True                          # Use TLS for encryption
-EMAIL_HOST_USER = 'voyreply@gmail.com'        # Your Gmail address
-EMAIL_HOST_PASSWORD = 'your_email_password'   # Your Gmail password or an app-specific password
-DEFAULT_FROM_EMAIL = 'voyreply@gmail.com'     # Default sender email
 
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
 
 

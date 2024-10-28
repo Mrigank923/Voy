@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from .models import OTP  
+
 
 
 User = get_user_model()
@@ -32,31 +34,61 @@ class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
-class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+
+class ForgotPasswordRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
 
     def validate_email(self, value):
-        try:
-            user = User.objects.get(email=value)
-        except User.DoesNotExist:
+        # Check if a user with this email exists
+        if not User.objects.filter(email=value).exists():
             raise serializers.ValidationError("User with this email does not exist.")
-        return {"user": user}
+        return value
 
 
-class UserChangePasswordSerializer(serializers.Serializer):
-    password=serializers.CharField(max_length=255,style={'input_type':'password'},write_only=True)
-    password2=serializers.CharField(max_length=255,style={'input_type':'password'},write_only=True)
-    class Meta:
-        fields=['password','password2']
-    def validate(self,attrs):
-        password=attrs.get(password)
-        password2=attrs.get(password2)
-        user=self.context.get('user')
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6)  
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    confirm_password = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, attrs):
+        
         if attrs['password'] != attrs['confirm_password']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
-        user.set_password(password)
-        user.save()
+
+        
+        try:
+            user = User.objects.get(email=attrs['email'])
+            otp_instance = OTP.objects.filter(user=user, code=attrs['otp']).last()
+            if not otp_instance or not otp_instance.is_valid():
+                raise serializers.ValidationError({"otp": "Invalid or expired OTP."})
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "User with this email does not exist."})
+
         return attrs
 
+    def save(self, **kwargs):
+        
+        email = self.validated_data['email']
+        password = self.validated_data['password']
+        user = User.objects.get(email=email)
+        user.set_password(password)
+        user.save()
+        return user
 
 
+class VerifyOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6)
+
+    def validate(self, attrs):
+        
+        try:
+            user = User.objects.get(email=attrs['email'])
+            otp_instance = OTP.objects.filter(user=user, code=attrs['otp']).last()
+            if not otp_instance or not otp_instance.is_valid():
+                raise serializers.ValidationError({"otp": "Invalid or expired OTP."})
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "User with this email does not exist."})
+        
+        return attrs
