@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 import random
 from django.utils import timezone
 from datetime import timedelta
-
+import logging
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -36,19 +36,29 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
     
+
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class OTP(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otp_codes")
     code = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
+    is_verified = models.BooleanField(default=False)
+    attempts = models.IntegerField(default=0)
 
     def is_valid(self):
-        
-        return timezone.now() <= self.created_at + timedelta(minutes=10)
+        return (
+            timezone.now() <= self.created_at + timedelta(minutes=10) and
+            not self.is_verified and
+            self.attempts < 3
+        )
 
     @classmethod
     def create_otp_for_user(cls, user):
-        otp_code = str(random.randint(100000, 999999))
-        otp_instance = cls.objects.create(user=user, code=otp_code)
-        return otp_instance
+        
+        cls.objects.filter(user=user, is_verified=False).update(is_verified=True)
+        
+        
+        otp_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        return cls.objects.create(user=user, code=otp_code)

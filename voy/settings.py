@@ -15,6 +15,8 @@ from decouple import config
 from datetime import timedelta
 import os
 
+
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -154,12 +156,10 @@ SIMPLE_JWT = {
 AUTH_USER_MODEL = 'authentication.User'
 
 
-
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-
-
+EMAIL_HOST_USER = 'voyreply@gmail.com'  # Replace with your Gmail
+EMAIL_HOST_PASSWORD = 'tvww jltk cyvi izey'  # Replace with your app password
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
