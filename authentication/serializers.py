@@ -13,6 +13,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('id', 'email', 'first_name', 'last_name')
 
 class RegisterSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField(write_only=True, required=True)
+    last_name = serializers.CharField(write_only=True, required=True)
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     confirm_password = serializers.CharField(write_only=True, required=True)
 
@@ -50,6 +52,7 @@ class VerifyOTPSerializer(serializers.Serializer):
     def validate(self, attrs):
         email = attrs['email']
         otp = attrs['otp']
+        
         
         try:
             user = User.objects.get(email=email)
