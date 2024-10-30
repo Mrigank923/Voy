@@ -6,6 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer
 from django.http import JsonResponse
+from rest_framework_simplejwt.exceptions import TokenError
 
 
 # this is just a placeholder view for the deault path
@@ -68,4 +69,80 @@ class UserView(APIView):
         return Response(serializer.data)
 
 
+class CustomTokenRefreshView(APIView):
+    print(9);
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        print(1);
+        try:
+            refresh_token = request.data.get('refresh')
+            print(2);
+            if not refresh_token:
+                return Response({
+                    'error': 'Refresh token is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            print(3);
+            # Verify and create new tokens
+            refresh = RefreshToken(refresh_token)
+            print(4);
+            
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh)
+            }, status=status.HTTP_200_OK)
 
+        except TokenError as e:
+            print(5);
+            return Response({
+                'error': 'Invalid or expired refresh token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        except Exception as e:
+            print(7);
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        print(8);
+        return Response({
+            'string': 'hi there'
+        })
+
+
+class RefreshViewNew(APIView):
+
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        # print(1);
+        try:
+            refresh_token = request.data.get('refresh')
+            # print(2);
+            if not refresh_token:
+                return Response({
+                    'error': 'Refresh token is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            # print(3);
+            # Verify and create new tokens
+            refresh = RefreshToken(refresh_token)
+            # print(4);
+            
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh)
+            }, status=status.HTTP_200_OK)
+
+        except TokenError as e:
+            # print(5);
+            return Response({
+                'error': 'Invalid or expired refresh token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        except Exception as e:
+            # print(7);
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+ 
