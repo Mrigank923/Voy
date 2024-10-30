@@ -36,14 +36,15 @@ class CustomUserManager(BaseUserManager):
 class User(AbstractUser):
     username = None 
     email = models.EmailField(unique=True, error_messages={'unique': 'A user with that email already exists.'})
+    phone_number = models.CharField(_('phone number'), max_length=15, unique=True)
     first_name = models.CharField(_('first name'), max_length=150)
     last_name = models.CharField(_('last name'), max_length=150)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=False)
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['first_name', 'last_name']
+    REQUIRED_FIELDS = ['first_name', 'last_name', 'phone_number']
 
     objects = CustomUserManager()
 
@@ -67,11 +68,16 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 #OTP MODEL 
 class OTP(models.Model):
+    TYPE_CHOICES = (
+        ('EMAIL', 'Email'),
+        ('PASSOWROD_RESET', 'password_reset'),
+    )
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otp_codes")
     code = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
     attempts = models.IntegerField(default=0)
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES)
 
     def is_valid(self):
         return (
@@ -83,7 +89,7 @@ class OTP(models.Model):
     @classmethod
     def create_otp_for_user(cls, user):
         
-        cls.objects.filter(user=user, is_verified=False).update(is_verified=True)
+        cls.objects.filter(user=user, is_verified=False, type=type).update(is_verified=True)
         
         #Generate otp of 4 digits
         otp_code = ''.join([str(random.randint(0, 9)) for _ in range(4)])
