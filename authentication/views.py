@@ -1,26 +1,24 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny , IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.http import JsonResponse
+from rest_framework_simplejwt.exceptions import TokenError
 from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from django.conf import settings
 from .serializers import ForgotPasswordSerializer, ResetPasswordSerializer,VerifyOTPSerializer
 from .models import OTP  
 import logging
-
-
-
 from django.contrib.auth import get_user_model
 
-User = get_user_model()
-logger = logging.getLogger(__name__)
 
+# this is just a placeholder view for the deault path
+def home_view(request):
+    return JsonResponse({"message": "Welcome to the app!"})
 
 
 class RegisterView(APIView):
@@ -68,6 +66,8 @@ class LoginView(APIView):
                 'message': 'Invalid credentials'
             }, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUES)
+User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class ForgotPasswordView(APIView):
@@ -105,8 +105,7 @@ class ForgotPasswordView(APIView):
 
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
+    
 class VerifyOTPView(APIView):
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
@@ -130,3 +129,90 @@ class ResetPasswordView(APIView):
                 status=status.HTTP_200_OK
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    # TODO check the userview api in postman with header as Authorization p
+class UserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+
+
+class CustomTokenRefreshView(APIView):
+    print(9);
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        print(1);
+        try:
+            refresh_token = request.data.get('refresh')
+            print(2);
+            if not refresh_token:
+                return Response({
+                    'error': 'Refresh token is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            print(3);
+            # Verify and create new tokens
+            refresh = RefreshToken(refresh_token)
+            print(4);
+            
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh)
+            }, status=status.HTTP_200_OK)
+
+        except TokenError as e:
+            print(5);
+            return Response({
+                'error': 'Invalid or expired refresh token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        except Exception as e:
+            print(7);
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        print(8);
+        return Response({
+            'string': 'hi there'
+        })
+
+
+class RefreshViewNew(APIView):
+
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        # print(1);
+        try:
+            refresh_token = request.data.get('refresh')
+            # print(2);
+            if not refresh_token:
+                return Response({
+                    'error': 'Refresh token is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            # print(3);
+            # Verify and create new tokens
+            refresh = RefreshToken(refresh_token)
+            # print(4);
+            
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh)
+            }, status=status.HTTP_200_OK)
+
+        except TokenError as e:
+            # print(5);
+            return Response({
+                'error': 'Invalid or expired refresh token'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        except Exception as e:
+            # print(7);
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+ 
