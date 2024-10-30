@@ -76,11 +76,13 @@ class ForgotPasswordView(APIView):
 
         if serializer.is_valid():
             email = serializer.validated_data['email']
-            try:
-                user = User.objects.get(email=email)
-                otp_instance = OTP.create_otp_for_user(user)
+            user = User.objects.get(email=email)  
 
-               
+            
+            otp_instance = OTP.create_otp_for_user(user)
+
+            
+            try:
                 send_mail(
                     'Password Reset OTP',
                     f'Your OTP for password reset is: {otp_instance.code}\n'
@@ -89,16 +91,20 @@ class ForgotPasswordView(APIView):
                     [email],
                     fail_silently=False,
                 )
+                return Response(
+                    {"message": "An OTP has been sent to the registered email."},
+                    status=status.HTTP_200_OK
+                )
             except Exception as e:
-                logger.error(f"Failed to process password reset for {email}: {str(e)}")
+                
+                logger.error(f"Failed to send password reset OTP to {email}: {str(e)}")
+                return Response(
+                    {"message": "Failed to send OTP. Please try again later."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
-            
-            return Response(
-                {"message": "If an account exists with this email, you will receive a password reset OTP."},
-                status=status.HTTP_200_OK
-            )
+        
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 class VerifyOTPView(APIView):

@@ -39,7 +39,7 @@ class User(AbstractUser):
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-
+#OTP MODEL 
 class OTP(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otp_codes")
     code = models.CharField(max_length=6)
@@ -59,6 +59,6 @@ class OTP(models.Model):
         
         cls.objects.filter(user=user, is_verified=False).update(is_verified=True)
         
-        
-        otp_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        #Generate otp of 4 digits
+        otp_code = ''.join([str(random.randint(0, 9)) for _ in range(4)])
         return cls.objects.create(user=user, code=otp_code)

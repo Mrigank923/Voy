@@ -37,14 +37,17 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
-
+#serializer for forgot-password
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def validate_email(self, value):
-        
+        # Check if the email exists in the database
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("User with this email does not exist.")
         return value
 
+#serilaizer for otp 
 class VerifyOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
@@ -64,7 +67,7 @@ class VerifyOTPSerializer(serializers.Serializer):
 
             if not otp_instance:
                 raise serializers.ValidationError({"otp": "Invalid OTP."})
-
+            
             if not otp_instance.is_valid():
                 if otp_instance.attempts >= 3:
                     raise serializers.ValidationError({"otp": "Too many attempts. Please request a new OTP."})
@@ -77,23 +80,24 @@ class VerifyOTPSerializer(serializers.Serializer):
             self.context['otp_instance'] = otp_instance
 
         except User.DoesNotExist:
-            # Don't reveal whether user exists
+            
             raise serializers.ValidationError({"otp": "Invalid OTP."})
 
         return attrs
-
+    
     def save(self):
         otp_instance = self.context['otp_instance']
         otp_instance.is_verified = True
         otp_instance.save()
         return self.context['user']
 
+#after verification process of reset password
 class ResetPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
     new_password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True, min_length=8)
-
+    #function to check if both the new passwords match or not
     def validate(self, attrs):
         if attrs['new_password'] != attrs['confirm_password']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
@@ -120,7 +124,7 @@ class ResetPasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({"error": "Invalid credentials."})
 
         return attrs
-
+    #function that sets the new password as the login password orf user
     def save(self):
         user = self.context['user']
         user.set_password(self.validated_data['new_password'])
