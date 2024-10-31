@@ -16,6 +16,9 @@ import logging
 from django.contrib.auth import get_user_model
 import requests
 from django.conf import settings
+from django.core.cache import cache
+import uuid
+import random
 
 
 # this is just a placeholder view for the deault path
@@ -29,24 +32,52 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
-            user = serializer.save()
-            
-            email_otp = OTP.create_otp_for_user(user, otp_type='EMAIL')
-            phone_otp = OTP.create_otp_for_user(user, otp_type='PHONE')
-            
+            email = serializer.validated_data['email'].lower()
+            phone = serializer.validated_data['phone_number']
+
             try:
-                send_mail(
-                    'Verify Your Email',
-                    f'Your email verification code is: {email_otp.code}\n'
-                    f'This code will expire in 10 minutes.',
-                    settings.DEFAULT_FROM_EMAIL,
-                    [user.email],
-                    fail_silently=False,
+                # Create temporary user instance
+                temp_user = User.objects.create_unverified_user(
+                    email=email,
+                    password=serializer.validated_data['password'],
+                    first_name=serializer.validated_data['first_name'],
+                    last_name=serializer.validated_data['last_name'],
+                    phone_number=phone
                 )
                 
-                api_key = settings.TWOFACTOR_API_KEY
-                url = f"https://2factor.in/API/V1/{api_key}/SMS/{user.phone_number}/{phone_otp.code}"
+                # Generate OTPs
+                email_otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+                phone_otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
                 
+                # Store in cache
+                temp_user_id = str(uuid.uuid4())
+                cache_key = f"registration_{temp_user_id}"
+                
+                cache.set(cache_key, {
+                    'user_dict': {
+                        'email': temp_user.email,
+                        'password': temp_user.password,
+                        'first_name': temp_user.first_name,
+                        'last_name': temp_user.last_name,
+                        'phone_number': temp_user.phone_number,
+                    },
+                    'email_otp': email_otp,
+                    'phone_otp': phone_otp
+                }, timeout=600)
+
+                # Send email OTP
+                send_mail(
+                    'Verify Your Email',
+                    f'Your email verification code is: {email_otp}\n'
+                    f'This code will expire in 10 minutes.',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [email],
+                    fail_silently=False,
+                )
+
+                # Send phone OTP
+                api_key = settings.TWOFACTOR_API_KEY
+                url = f"https://2factor.in/API/V1/{api_key}/SMS/{phone}/{phone_otp}"
                 response = requests.get(url)
                 response_data = response.json()
 
@@ -56,23 +87,25 @@ class RegisterView(APIView):
                 return Response({
                     'success': True,
                     'status': 'success',
-                    'message': 'Registration successful. Please verify your email and phone number.',
-                    'user': UserSerializer(user).data,
+                    'message': 'Verification codes sent. Please verify both email and phone.',
+                    'temp_user_id': temp_user_id
                 }, status=status.HTTP_201_CREATED)
-                
+
             except Exception as e:
-                user.delete()  
+                if 'cache_key' in locals():
+                    cache.delete(cache_key)
                 return Response({
                     'success': False,
                     'status': 'error',
-                    'message': 'Failed to send verification codes. Please try again.'
+                    'message': str(e)
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                
+
         return Response({
             'success': False,
             'status': 'error',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
 
 
     
@@ -82,18 +115,56 @@ class VerifyRegistrationOTPView(APIView):
 
     def post(self, request):
         serializer = VerifyRegistrationOTPSerializer(data=request.data)
+        
         if serializer.is_valid():
-            user = serializer.save()
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                'status': 'success',
-                'message': 'Email verified successfully',
-                'tokens': {
-                    'access': str(refresh.access_token),
-                    'refresh': str(refresh),
-                }
-            }, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                cached_data = serializer.context['cached_data']
+                cache_key = serializer.context['cache_key']
+                
+                # Create and save the verified user
+                user_data = cached_data['user_dict']
+                user = User.objects.create(
+                    email=user_data['email'],
+                    password=user_data['password'],
+                    first_name=user_data['first_name'],
+                    last_name=user_data['last_name'],
+                    phone_number=user_data['phone_number'],
+                    is_active=True,
+                    email_verified=True,
+                    phone_verified=True,
+                    registration_pending=False
+                )
+                
+                # Clean up cache
+                cache.delete(cache_key)
+                
+                # Generate tokens
+                refresh = RefreshToken.for_user(user)
+                
+                return Response({
+                    'success': True,
+                    'status': 'success',
+                    'message': 'Registration completed successfully.',
+                    'user': UserSerializer(user).data,
+                    'tokens': {
+                        'access': str(refresh.access_token),
+                        'refresh': str(refresh),
+                    }
+                }, status=status.HTTP_200_OK)
+                
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'status': 'error',
+                    'message': str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        return Response({
+            'success': False,
+            'status': 'error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class LoginView(APIView):

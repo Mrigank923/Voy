@@ -11,6 +11,15 @@ from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
 
 class CustomUserManager(BaseUserManager):
+    def create_unverified_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('Email is required')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.is_active = False
+        user.full_clean()
+        return user
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError('Email is required')
@@ -35,7 +44,7 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
-    username = None 
+    username = None
     email = models.EmailField(unique=True, error_messages={'unique': 'A user with that email already exists.'})
     phone_number = models.CharField(_('phone number'), max_length=15, unique=True)
     first_name = models.CharField(_('first name'), max_length=150)
@@ -45,6 +54,8 @@ class User(AbstractUser):
     is_active = models.BooleanField(default=False)
     email_verified = models.BooleanField(default=False)
     phone_verified = models.BooleanField(default=False)
+    registration_pending = models.BooleanField(default=True)
+
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name', 'phone_number']
@@ -55,6 +66,19 @@ class User(AbstractUser):
         verbose_name = _('user')
         verbose_name_plural = _('users')
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['email'],
+                condition=models.Q(registration_pending=False),
+                name='unique_verified_email'
+            ),
+            models.UniqueConstraint(
+                fields=['phone_number'],
+                condition=models.Q(registration_pending=False),
+                name='unique_verified_phone'
+            )
+        ]
+
 
     def __str__(self):
         return self.email
@@ -76,7 +100,7 @@ class OTP(models.Model):
         ('PASSOWROD_RESET', 'password_reset'),
         ('PHONE', 'Phone')
     )
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otp_codes")
+    user = models.ForeignKey(User, on_delete=models.CASCADE,null=True, related_name="otp_codes")
     code = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
