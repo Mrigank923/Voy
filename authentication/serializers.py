@@ -22,23 +22,16 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(write_only=True, required=True)
     last_name = serializers.CharField(write_only=True, required=True)
-    #didnt use validators before
-    password = serializers.CharField(
-        write_only=True,
-        required=True,
-        style={'input_type': 'password'},
-        validators=[validate_password]
+    phone_number = serializers.CharField(write_only=True, required=True)
+    password = serializers.CharField(write_only=True,required=True,style={'input_type': 'password'},validators=[validate_password]
     )
-    confirm_password = serializers.CharField(
-        write_only=True,
-        required=True,
-        style={'input_type': 'password'}
+    confirm_password = serializers.CharField(write_only=True,required=True,style={'input_type': 'password'}
     )
 
     
     class Meta:
         model = User
-        fields = ('email', 'password', 'confirm_password', 'first_name', 'last_name')
+        fields = ('email', 'password', 'phone_number', 'confirm_password', 'first_name', 'last_name')
         extra_kwargs = {
             'first_name': {'required': True},
             'last_name': {'required': True},
@@ -64,16 +57,15 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
     def create(self, validated_data):
-        """
-        Create and return a new user instance.
-        """
         validated_data.pop('confirm_password')
         try:
             user = User.objects.create_user(
                 email=validated_data['email'],
                 password=validated_data['password'],
                 first_name=validated_data['first_name'],
-                last_name=validated_data['last_name']
+                last_name=validated_data['last_name'],
+                phone_number=validated_data['phone_number']
+
             )
             return user
         except ValidationError as e:
@@ -193,4 +185,54 @@ class ResetPasswordSerializer(serializers.Serializer):
 
        
         OTP.objects.filter(user=user, is_verified=False).update(is_verified=True)
+        return user
+
+
+class VerifyRegistrationOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    email_otp = serializers.CharField(max_length=6)
+    
+    def validate(self, attrs):
+        email = attrs['email']
+        email_otp = attrs['email_otp']
+        
+        try:
+            user = User.objects.get(email=email)
+            otp_instance = OTP.objects.filter(
+                user=user,
+                code=email_otp,
+                type='EMAIL',
+                is_verified=False
+            ).order_by('-created_at').first()
+
+            if not otp_instance:
+                raise serializers.ValidationError({"email_otp": "Invalid OTP."})
+            
+            if not otp_instance.is_valid():
+                if otp_instance.attempts >= 3:
+                    raise serializers.ValidationError({"email_otp": "Too many attempts. Please request a new OTP."})
+                
+                otp_instance.attempts += 1
+                otp_instance.save()
+                raise serializers.ValidationError({"email_otp": "Invalid or expired OTP."})
+
+            self.context['user'] = user
+            self.context['otp_instance'] = otp_instance
+
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email_otp": "Invalid OTP."})
+
+        return attrs
+    
+    def save(self):
+        user = self.context['user']
+        otp_instance = self.context['otp_instance']
+        
+        otp_instance.is_verified = True
+        otp_instance.save()
+        
+        user.email_verified = True
+        user.is_active = True 
+        user.save()
+        
         return user

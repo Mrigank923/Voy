@@ -17,6 +17,7 @@ class CustomUserManager(BaseUserManager):
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
+        user.is_active = False
         user.full_clean()  
         user.save(using=self._db)
         return user
@@ -42,6 +43,8 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=False)
+    email_verified = models.BooleanField(default=False)
+    phone_verified = models.BooleanField(default=False)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name', 'phone_number']
@@ -77,7 +80,7 @@ class OTP(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
     attempts = models.IntegerField(default=0)
-    type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='EMAIL')
 
     def is_valid(self):
         return (
@@ -87,12 +90,11 @@ class OTP(models.Model):
         )
 
     @classmethod
-    def create_otp_for_user(cls, user):
+    def create_otp_for_user(cls, user, otp_type='EMAIL'):
         
-        cls.objects.filter(user=user, is_verified=False, type=type).update(is_verified=True)
+        cls.objects.filter(user=user, is_verified=False, type=otp_type).update(is_verified=True)
         
-        #Generate otp of 4 digits
         otp_code = ''.join([str(random.randint(0, 9)) for _ in range(4)])
-        return cls.objects.create(user=user, code=otp_code)
+        return cls.objects.create(user=user, code=otp_code, type=otp_type)
 
 

@@ -10,7 +10,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from django.conf import settings
-from .serializers import ForgotPasswordSerializer, ResetPasswordSerializer,VerifyOTPSerializer
+from .serializers import ForgotPasswordSerializer, ResetPasswordSerializer,VerifyOTPSerializer, VerifyRegistrationOTPSerializer
 from .models import OTP  
 import logging
 from django.contrib.auth import get_user_model
@@ -28,17 +28,49 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            otp_instance = OTP.create_otp_for_user(user, otp_type='EMAIL')
+            try:
+                send_mail(
+                    'Verify Your Email',
+                    f'Your verification code is: {otp_instance.code}\n'
+                    f'This code will expire in 10 minutes.',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                )
+                return Response({
+                    'status': 'success',
+                    'message': 'Registration successful. Please verify your email.',
+                    'user': UserSerializer(user).data,
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                user.delete()  
+                return Response({
+                    'status': 'error',
+                    'message': 'Failed to send verification email. Please try again.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+class VerifyRegistrationOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = VerifyRegistrationOTPSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
             refresh = RefreshToken.for_user(user)
             return Response({
                 'status': 'success',
-                'message': 'User registered successfully',
-                'user': UserSerializer(user).data,
+                'message': 'Email verified successfully',
                 'tokens': {
                     'access': str(refresh.access_token),
                     'refresh': str(refresh),
                 }
-            }, status=status.HTTP_201_CREATED)
+            }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
