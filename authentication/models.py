@@ -74,6 +74,7 @@ class OTP(models.Model):
     TYPE_CHOICES = (
         ('EMAIL', 'Email'),
         ('PASSOWROD_RESET', 'password_reset'),
+        ('PHONE', 'Phone')
     )
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otp_codes")
     code = models.CharField(max_length=6)
@@ -94,7 +95,7 @@ class OTP(models.Model):
         
         cls.objects.filter(user=user, is_verified=False, type=otp_type).update(is_verified=True)
         
-        otp_code = ''.join([str(random.randint(0, 9)) for _ in range(4)])
+        otp_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
         return cls.objects.create(user=user, code=otp_code, type=otp_type)
 
 

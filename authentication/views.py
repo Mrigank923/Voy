@@ -10,10 +10,12 @@ from rest_framework_simplejwt.exceptions import TokenError
 from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from django.conf import settings
-from .serializers import ForgotPasswordSerializer, ResetPasswordSerializer,VerifyOTPSerializer, VerifyRegistrationOTPSerializer
+from .serializers import ForgotPasswordSerializer, ResetPasswordSerializer,VerifyOTPSerializer, VerifyRegistrationOTPSerializer, SendPhoneOTPSerializer, VerifyPhoneOTPSerializer 
 from .models import OTP  
 import logging
 from django.contrib.auth import get_user_model
+import requests
+from django.conf import settings
 
 
 # this is just a placeholder view for the deault path
@@ -247,4 +249,57 @@ class RefreshViewNew(APIView):
             return Response({
                 'error': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class SendPhoneOTPView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = SendPhoneOTPSerializer(data=request.data)
+        if serializer.is_valid():
+            phone_number = serializer.validated_data['phone_number']
+            user = User.objects.get(phone_number=phone_number)
+
+            otp_instance = OTP.create_otp_for_user(user, otp_type='PHONE')
+
+            try:
+                api_key = settings.TWOFACTOR_API_KEY
+                url = f"https://2factor.in/API/V1/{api_key}/SMS/{phone_number}/{otp_instance.code}"
+                
+                response = requests.get(url)
+                response_data = response.json()
+
+                if response_data['Status'] == 'Success':
+                    return Response({
+                        'status': 'success',
+                        'message': 'OTP sent successfully to your phone number.'
+                    }, status=status.HTTP_200_OK)
+                else:
+                    return Response({
+                        'status': 'error',
+                        'message': 'Failed to send OTP. Please try again.'
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            except Exception as e:
+                logger.error(f"Failed to send phone OTP to {phone_number}: {str(e)}")
+                return Response({
+                    'status': 'error',
+                    'message': 'Failed to send OTP. Please try again later.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class VerifyPhoneOTPView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = VerifyPhoneOTPSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                'status': 'success',
+                'message': 'Phone number verified successfully'
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
  
