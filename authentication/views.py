@@ -32,38 +32,42 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
-            email = serializer.validated_data['email'].lower()
-            phone = serializer.validated_data['phone_number']
-
             try:
-                # Create temporary user instance
+                
+                email = serializer.validated_data['email']
+                phone = serializer.validated_data['phone_number']
+                password = serializer.validated_data['password']
+
                 temp_user = User.objects.create_unverified_user(
                     email=email,
-                    password=serializer.validated_data['password'],
-                    first_name=serializer.validated_data['first_name'],
-                    last_name=serializer.validated_data['last_name'],
-                    phone_number=phone
+                    password=password,
+                    phone_number=phone,
+                    first_name=serializer.validated_data.get('first_name', ''),
+                    last_name=serializer.validated_data.get('last_name', '')
                 )
+
                 
                 # Generate OTPs
                 email_otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
                 phone_otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
                 
-                # Store in cache
+                # Store in cache, this will/should be deleted after like 10 minutes
                 temp_user_id = str(uuid.uuid4())
                 cache_key = f"registration_{temp_user_id}"
                 
-                cache.set(cache_key, {
+                cache_data = {
                     'user_dict': {
                         'email': temp_user.email,
-                        'password': temp_user.password,
+                        'password': temp_user.password,  # This is already hashed by set_password
                         'first_name': temp_user.first_name,
                         'last_name': temp_user.last_name,
                         'phone_number': temp_user.phone_number,
                     },
                     'email_otp': email_otp,
                     'phone_otp': phone_otp
-                }, timeout=600)
+                }
+
+                cache.set(cache_key, cache_data, timeout=600)
 
                 # Send email OTP
                 send_mail(

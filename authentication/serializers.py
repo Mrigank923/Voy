@@ -34,6 +34,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         required=True,
         style={'input_type': 'password'}
     )
+    first_name = serializers.CharField(required=False, allow_blank=True)  
+    last_name = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User

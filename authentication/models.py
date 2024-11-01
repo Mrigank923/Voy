@@ -15,21 +15,28 @@ class CustomUserManager(BaseUserManager):
         if not email:
             raise ValueError('Email is required')
         email = self.normalize_email(email)
-        user = self.model(email=email, **extra_fields)
-        user.set_password(password)
-        user.is_active = False
-        user.full_clean()
+        user = self.model(email=email,is_active=False,registration_pending=True,**extra_fields)
+        
+        if password:
+            user.set_password(password)
         return user
+    
+
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError('Email is required')
+            
         email = self.normalize_email(email)
-        user = self.model(email=email, **extra_fields)
-        user.set_password(password)
-        user.is_active = False
-        user.full_clean()  
+        
+        user = self.model(email=email,is_active=False,**extra_fields)
+        
+        if password:
+            user.set_password(password)
+            
+        user.full_clean()
         user.save(using=self._db)
         return user
+
 
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
@@ -47,8 +54,8 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True, error_messages={'unique': 'A user with that email already exists.'})
     phone_number = models.CharField(_('phone number'), max_length=15, unique=True)
-    first_name = models.CharField(_('first name'), max_length=150)
-    last_name = models.CharField(_('last name'), max_length=150)
+    first_name = models.CharField(_('first name'), max_length=150, blank=True)
+    last_name = models.CharField(_('last name'), max_length=150, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=False)
@@ -58,7 +65,7 @@ class User(AbstractUser):
 
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['first_name', 'last_name', 'phone_number']
+    REQUIRED_FIELDS = [ 'phone_number']
 
     objects = CustomUserManager()
 
