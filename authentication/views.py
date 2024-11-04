@@ -16,9 +16,11 @@ import logging
 from django.contrib.auth import get_user_model
 import requests
 from django.conf import settings
-from django.core.cache import cache
-import uuid
 import random
+from django.db import transaction
+from django.db.utils import IntegrityError
+from datetime import timedelta
+from django.utils import timezone
 
 
 # this is just a placeholder view for the deault path
@@ -34,140 +36,142 @@ class RegisterView(APIView):
         if serializer.is_valid():
             try:
                 
-                email = serializer.validated_data['email']
-                phone = serializer.validated_data['phone_number']
-                password = serializer.validated_data['password']
-
-                temp_user = User.objects.create_unverified_user(
-                    email=email,
-                    password=password,
-                    phone_number=phone,
+                user = User.objects.create_user(
+                    email=serializer.validated_data['email'],
+                    password=serializer.validated_data['password'],
+                    phone_number=serializer.validated_data['phone_number'],
                     first_name=serializer.validated_data.get('first_name', ''),
                     last_name=serializer.validated_data.get('last_name', '')
                 )
 
+
                 
                 # Generate OTPs
-                email_otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-                phone_otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-                
-                # Store in cache, this will/should be deleted after like 10 minutes
-                temp_user_id = str(uuid.uuid4())
-                cache_key = f"registration_{temp_user_id}"
-                
-                cache_data = {
-                    'user_dict': {
-                        'email': temp_user.email,
-                        'password': temp_user.password,  # This is already hashed by set_password
-                        'first_name': temp_user.first_name,
-                        'last_name': temp_user.last_name,
-                        'phone_number': temp_user.phone_number,
-                    },
-                    'email_otp': email_otp,
-                    'phone_otp': phone_otp
-                }
+                email_otp_instance = OTP.objects.create(
+                    user=user,
+                    code=''.join([str(random.randint(0, 9)) for _ in range(6)]),
+                    type='EMAIL'
+                )
 
-                cache.set(cache_key, cache_data, timeout=600)
+                phone_otp_instance = OTP.objects.create(
+                    user=user,
+                    code=''.join([str(random.randint(0, 9)) for _ in range(6)]),
+                    type='PHONE'
+                )
 
+                
                 # Send email OTP
                 send_mail(
                     'Verify Your Email',
-                    f'Your email verification code is: {email_otp}\n'
+                    f'Your email verification code is: {email_otp_instance.code}\n'
                     f'This code will expire in 10 minutes.',
                     settings.DEFAULT_FROM_EMAIL,
-                    [email],
+                    [user.email],
                     fail_silently=False,
                 )
 
+
                 # Send phone OTP
                 api_key = settings.TWOFACTOR_API_KEY
-                url = f"https://2factor.in/API/V1/{api_key}/SMS/{phone}/{phone_otp}"
+                url = f"https://2factor.in/API/V1/{api_key}/SMS/{user.phone_number}/{phone_otp_instance.code}"
                 response = requests.get(url)
-                response_data = response.json()
 
-                if response_data['Status'] != 'Success':
+                
+                if response.json()['Status'] != 'Success':
                     raise Exception("Failed to send phone OTP")
 
                 return Response({
                     'success': True,
-                    'status': 'success',
                     'message': 'Verification codes sent. Please verify both email and phone.',
-                    'temp_user_id': temp_user_id
+                    'user_id': user.id
                 }, status=status.HTTP_201_CREATED)
 
+
             except Exception as e:
-                if 'cache_key' in locals():
-                    cache.delete(cache_key)
+                # If anything fails, cleanup the user
+                if 'user' in locals():
+                    user.delete()
                 return Response({
                     'success': False,
-                    'status': 'error',
                     'message': str(e)
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({
             'success': False,
-            'status': 'error',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-
-
-    
 
 class VerifyRegistrationOTPView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = VerifyRegistrationOTPSerializer(data=request.data)
-        
-        if serializer.is_valid():
-            try:
-                cached_data = serializer.context['cached_data']
-                cache_key = serializer.context['cache_key']
-                
-                # Create and save the verified user
-                user_data = cached_data['user_dict']
-                user = User.objects.create(
-                    email=user_data['email'],
-                    password=user_data['password'],
-                    first_name=user_data['first_name'],
-                    last_name=user_data['last_name'],
-                    phone_number=user_data['phone_number'],
-                    is_active=True,
-                    email_verified=True,
-                    phone_verified=True,
-                    registration_pending=False
-                )
-                
-                # Clean up cache
-                cache.delete(cache_key)
-                
-                # Generate tokens
-                refresh = RefreshToken.for_user(user)
-                
-                return Response({
-                    'success': True,
-                    'status': 'success',
-                    'message': 'Registration completed successfully.',
-                    'user': UserSerializer(user).data,
-                    'tokens': {
-                        'access': str(refresh.access_token),
-                        'refresh': str(refresh),
-                    }
-                }, status=status.HTTP_200_OK)
-                
-            except Exception as e:
+        try:
+            User.cleanup_expired_registrations()
+            
+            user = User.objects.get(
+                id=request.data.get('user_id'),
+                registration_pending=True,
+                created_at__gt=timezone.now() - timedelta(minutes=10)
+            )
+
+            email_otp = OTP.objects.filter(
+                user=user,
+                code=request.data.get('email_otp'),
+                type='EMAIL',
+                is_verified=False
+            ).first()
+            
+            phone_otp = OTP.objects.filter(
+                user=user,
+                code=request.data.get('phone_otp'),
+                type='PHONE',
+                is_verified=False
+            ).first()
+
+            if not email_otp or not phone_otp or not email_otp.is_valid() or not phone_otp.is_valid():
                 return Response({
                     'success': False,
-                    'status': 'error',
-                    'message': str(e)
+                    'message': 'Invalid or expired OTP codes.'
                 }, status=status.HTTP_400_BAD_REQUEST)
-                
-        return Response({
-            'success': False,
-            'status': 'error',
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                with transaction.atomic():# This will rollback the transaction if any of the queries fail.
+                    user.is_active = True
+                    user.email_verified = True
+                    user.phone_verified = True
+                    user.registration_pending = False
+                    user.save() 
+
+                    # Mark OTPs as verified
+                    email_otp.is_verified = True
+                    phone_otp.is_verified = True
+                    email_otp.save()
+                    phone_otp.save()
+
+            except IntegrityError:# This will catch any duplicate email violations
+                return Response({
+                    'success': False,
+                    'message': 'This email or phone number is already registered.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'success': True,
+                'message': 'Registration completed successfully.',
+                'user': UserSerializer(user).data,
+                'tokens': {
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                }
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Invalid or expired registration.'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 
@@ -177,25 +181,50 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
-            user = authenticate(
-                email=serializer.validated_data['email'],
-                password=serializer.validated_data['password']
-            )
-            if user:
-                refresh = RefreshToken.for_user(user)
+            email = serializer.validated_data['email'].lower() 
+            password = serializer.validated_data['password']
+            
+            try:
+                user = User.objects.get(email=email)
+                
+                if not user.is_active:
+                    return Response({
+                        'success': False,
+                        'status': 'error',
+                        'message': 'Please verify your email and phone number to login.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                user = authenticate(email=email, password=password)
+                if user:
+                    refresh = RefreshToken.for_user(user)
+                    return Response({
+                        'status': 'success',
+                        'success': True,
+                        'message': 'Login successful',
+                        'user': UserSerializer(user).data,
+                        'tokens': {
+                            'access': str(refresh.access_token),
+                            'refresh': str(refresh),
+                        }
+                    })
+                else:
+                    return Response({
+                        'success': False,
+                        'status': 'error',
+                        'message': 'Invalid password'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                    
+            except User.DoesNotExist:
                 return Response({
-                    'status': 'success',
-                    'success': True,
-                    'message': 'Login successful',
-                    'user': UserSerializer(user).data,
-                    'tokens': {
-                        'access': str(refresh.access_token),
-                        'refresh': str(refresh),
-                    }
-                })
-            return Response({
+                    'success': False,
+                    'status': 'error',
+                    'message': 'No account found with this email'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
             'success': False,
             'status': 'error',
+            'message': 'Invalid input',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
         

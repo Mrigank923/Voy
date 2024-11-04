@@ -48,29 +48,64 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value):
         email = value.lower()
+        
+        User.cleanup_expired_registrations(email=email)
+        
         if User.objects.filter(email=email, registration_pending=False).exists():
             raise serializers.ValidationError("A user with this email already exists.")
+            
+        recent_registration = User.objects.filter(
+            email=email,
+            registration_pending=True,
+            created_at__gt=timezone.now() - timedelta(minutes=10)
+        ).first()
+        
+        if recent_registration:
+            raise serializers.ValidationError(
+                "A registration is pending for this email. Please wait or request new verification codes."
+            )
+            
         return email
 
+
+
     def validate_phone_number(self, value):
+        User.cleanup_expired_registrations(phone_number=value)
+        
         if User.objects.filter(phone_number=value, registration_pending=False).exists():
             raise serializers.ValidationError("A user with this phone number already exists.")
+            
+        recent_registration = User.objects.filter(
+            phone_number=value,
+            registration_pending=True,
+            created_at__gt=timezone.now() - timedelta(minutes=10)
+        ).first()
+        
+        if recent_registration:
+            raise serializers.ValidationError(
+                "A registration is pending for this phone number. Please wait or request new verification codes."
+            )
+            
         return value
 
 
-
 class LoginSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True)
+    email = serializers.EmailField(required=True, error_messages={
+        'required': 'Email is required',
+        'invalid': 'Enter a valid email address'
+    })
+
     password = serializers.CharField(
         required=True,
         write_only=True,
-        style={'input_type': 'password'}
+        style={'input_type': 'password'},
+        error_messages={
+            'required': 'Password is required'
+        }
     )
 
+
     def validate_email(self, value):
-        """
-        Normalize email for login.
-        """
         return value.lower()
 
     email = serializers.EmailField()
