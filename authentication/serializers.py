@@ -2,25 +2,24 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from .models import OTP  
-from datetime import timedelta
 from django.utils import timezone
-from django.core.cache import cache
-
-
+from datetime import timedelta
+from .models import OTP
+from django.db.models import Q
 
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
-        fields = ('id', 'email', 'first_name', 'last_name', 'full_name', 'created_at')
-        read_only_fields = ('id', 'created_at')
+        fields = ('id', 'email', 'phone_number', 'first_name', 'last_name', 'full_name', 
+                 'created_at', 'email_verified', 'phone_verified')
+        read_only_fields = ('id', 'created_at', 'email_verified', 'phone_verified')
 
     def get_full_name(self, obj):
         return obj.get_full_name()
-
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -34,67 +33,87 @@ class RegisterSerializer(serializers.ModelSerializer):
         required=True,
         style={'input_type': 'password'}
     )
-    first_name = serializers.CharField(required=False, allow_blank=True)  
+    first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
         fields = ('email', 'password', 'confirm_password', 'phone_number', 'first_name', 'last_name')
+        extra_kwargs = {
+            'email': {
+                'required': True,
+                'validators': []
+            },
+            'phone_number': {'required': True}
+        }
 
     def validate(self, attrs):
         if attrs['password'] != attrs['confirm_password']:
-            raise serializers.ValidationError({"password": "Password fields didn't match."})
-        return attrs
+            raise serializers.ValidationError({
+                "password": "Password fields didn't match."
+            })
 
-    def validate_email(self, value):
-        email = value.lower()
-        
-        User.cleanup_expired_registrations(email=email)
-        
+        attrs['email'] = attrs['email'].lower()
+        email = attrs['email']
+        phone_number = attrs['phone_number']
+
+        # Check for pending registration
+        pending_user = User.objects.filter(
+            Q(email=email) | Q(phone_number=phone_number),
+            registration_pending=True,
+            created_at__gt=timezone.now() - timedelta(minutes=5)
+        ).first()
+
+        if pending_user:
+            time_remaining = (pending_user.created_at + timedelta(minutes=5) - timezone.now())
+            minutes = int(time_remaining.total_seconds() / 60)
+            seconds = int(time_remaining.total_seconds() % 60)
+
+            status_message = ""
+            next_step = ""
+
+            if not pending_user.email_verified:
+                status_message = "Email verification pending"
+                next_step = "email_verification"
+            else:
+                status_message = "Phone verification pending"
+                next_step = "phone_verification"
+
+            raise serializers.ValidationError({
+                "verification_status": {
+                    "user_id": pending_user.id,
+                    "message": f"{status_message}. Please verify or wait {minutes}m {seconds}s.",
+                    "email_verified": pending_user.email_verified,
+                    "phone_verified": pending_user.phone_verified,
+                    "next_step": next_step,
+                    "expires_in": {
+                        "minutes": minutes,
+                        "seconds": seconds
+                    }
+                }
+            })
+
         if User.objects.filter(email=email, registration_pending=False).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
-            
-        recent_registration = User.objects.filter(
-            email=email,
-            registration_pending=True,
-            created_at__gt=timezone.now() - timedelta(minutes=10)
-        ).first()
-        
-        if recent_registration:
-            raise serializers.ValidationError(
-                "A registration is pending for this email. Please wait or request new verification codes."
-            )
-            
-        return email
+            raise serializers.ValidationError({
+                "email": "This email is already registered. Please login or use a different email."
+            })
 
+        if User.objects.filter(phone_number=phone_number, registration_pending=False).exists():
+            raise serializers.ValidationError({
+                "phone_number": "This phone number is already registered. Please use a different number."
+            })
 
-
-    def validate_phone_number(self, value):
-        User.cleanup_expired_registrations(phone_number=value)
-        
-        if User.objects.filter(phone_number=value, registration_pending=False).exists():
-            raise serializers.ValidationError("A user with this phone number already exists.")
-            
-        recent_registration = User.objects.filter(
-            phone_number=value,
-            registration_pending=True,
-            created_at__gt=timezone.now() - timedelta(minutes=10)
-        ).first()
-        
-        if recent_registration:
-            raise serializers.ValidationError(
-                "A registration is pending for this phone number. Please wait or request new verification codes."
-            )
-            
-        return value
+        return attrs
 
 
 class LoginSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True, error_messages={
-        'required': 'Email is required',
-        'invalid': 'Enter a valid email address'
-    })
-
+    email = serializers.EmailField(
+        required=True,
+        error_messages={
+            'required': 'Email is required',
+            'invalid': 'Please enter a valid email address'
+        }
+    )
     password = serializers.CharField(
         required=True,
         write_only=True,
@@ -104,21 +123,128 @@ class LoginSerializer(serializers.Serializer):
         }
     )
 
-
     def validate_email(self, value):
         return value.lower()
 
-    email = serializers.EmailField()
-    password = serializers.CharField(write_only=True)
+class VerifyEmailOTPSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    email_otp = serializers.CharField(max_length=6)
 
+    def validate(self, attrs):
+        try:
+            user = User.objects.get(
+                id=attrs['user_id'],
+                registration_pending=True,
+                is_active=False,
+                email_verified=False
+            )
+        except User.DoesNotExist:
+            raise serializers.ValidationError({
+                "user_id": "Invalid or already verified user"
+            })
+
+        # Get the latest unverified OTP for this user
+        otp_instance = OTP.objects.filter(
+            user=user,
+            code=attrs['email_otp'],
+            type='EMAIL',
+            is_verified=False
+        ).order_by('-created_at').first()
+
+        if not otp_instance:
+            raise serializers.ValidationError({
+                "email_otp": "Invalid verification code"
+            })
+
+        if not otp_instance.is_valid():
+            if otp_instance.attempts >= 3:
+                raise serializers.ValidationError({
+                    "email_otp": "Too many failed attempts. Please request a new code."
+                })
+            
+            otp_instance.attempts += 1
+            otp_instance.save()
+            raise serializers.ValidationError({
+                "email_otp": "Invalid or expired verification code"
+            })
+
+        attrs['user'] = user
+        attrs['otp_instance'] = otp_instance
+        return attrs
+
+    def save(self, **kwargs):
+        otp_instance = self.validated_data['otp_instance']
+        otp_instance.is_verified = True
+        otp_instance.save()
+        return self.validated_data['user']
+
+class VerifyPhoneOTPSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    phone_otp = serializers.CharField(max_length=6)
+
+    def validate(self, attrs):
+        try:
+            user = User.objects.get(
+                id=attrs['user_id'],
+                registration_pending=True,
+                is_active=False,
+                email_verified=True,
+                phone_verified=False
+            )
+        except User.DoesNotExist:
+            raise serializers.ValidationError({
+                "user_id": "Invalid user or wrong verification order"
+            })
+
+        otp_instance = OTP.objects.filter(
+            user=user,
+            code=attrs['phone_otp'],
+            type='PHONE',
+            is_verified=False
+        ).order_by('-created_at').first()
+
+        if not otp_instance:
+            raise serializers.ValidationError({
+                "phone_otp": "Invalid verification code"
+            })
+
+        if not otp_instance.is_valid():
+            if otp_instance.attempts >= 3:
+                raise serializers.ValidationError({
+                    "phone_otp": "Too many failed attempts. Please request a new code."
+                })
+            
+            otp_instance.attempts += 1
+            otp_instance.save()
+            raise serializers.ValidationError({
+                "phone_otp": "Invalid or expired verification code"
+            })
+
+        attrs['user'] = user
+        attrs['otp_instance'] = otp_instance
+        return attrs
+
+    def save(self, **kwargs):
+        otp_instance = self.validated_data['otp_instance']
+        otp_instance.is_verified = True
+        otp_instance.save()
+        return self.validated_data['user']
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    email = serializers.EmailField(
+        error_messages={
+            'required': 'Email is required',
+            'invalid': 'Please enter a valid email address'
+        }
+    )
 
     def validate_email(self, value):
-        if not User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("User with this email does not exist.")
-        return value
+        email = value.lower()
+        if not User.objects.filter(email=email, is_active=True).exists():
+            raise serializers.ValidationError(
+                "No active account found with this email address"
+            )
+        return email
 
 class VerifyOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -128,185 +254,104 @@ class VerifyOTPSerializer(serializers.Serializer):
         email = attrs['email']
         otp = attrs['otp']
         
-        
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(email=email, is_active=True)
             otp_instance = OTP.objects.filter(
                 user=user,
                 code=otp,
+                type='PASSWORD_RESET',
                 is_verified=False
-            ).order_by('-created_at').first()  
+            ).order_by('-created_at').first()
 
             if not otp_instance:
-                raise serializers.ValidationError({"otp": "Invalid OTP."})
+                raise serializers.ValidationError({
+                    "otp": "Invalid verification code"
+                })
             
             if not otp_instance.is_valid():
                 if otp_instance.attempts >= 3:
-                    raise serializers.ValidationError({"otp": "Too many attempts. Please request a new OTP."})
+                    raise serializers.ValidationError({
+                        "otp": "Too many failed attempts. Please request a new code."
+                    })
                 
                 otp_instance.attempts += 1
                 otp_instance.save()
-                raise serializers.ValidationError({"otp": "Invalid or expired OTP."})
+                raise serializers.ValidationError({
+                    "otp": "Invalid or expired verification code"
+                })
 
-            self.context['user'] = user
-            self.context['otp_instance'] = otp_instance
+            attrs['user'] = user
+            attrs['otp_instance'] = otp_instance
+            return attrs
 
         except User.DoesNotExist:
-            
-            raise serializers.ValidationError({"otp": "Invalid OTP."})
+            raise serializers.ValidationError({
+                "email": "No active account found with this email address"
+            })
 
-        return attrs
-    
-    def save(self):
-        otp_instance = self.context['otp_instance']
+    def save(self, **kwargs):
+        otp_instance = self.validated_data['otp_instance']
         otp_instance.is_verified = True
         otp_instance.save()
-        return self.context['user']
+        return self.validated_data['user']
 
-#after verification process of reset password
 class ResetPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
-    new_password = serializers.CharField(write_only=True, min_length=8)
-    confirm_password = serializers.CharField(write_only=True, min_length=8)
-    #function to check if both the new passwords match or not
+    new_password = serializers.CharField(
+        write_only=True,
+        validators=[validate_password],
+        error_messages={
+            'required': 'New password is required'
+        }
+    )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        error_messages={
+            'required': 'Password confirmation is required'
+        }
+    )
+
     def validate(self, attrs):
+        # Validate password match
         if attrs['new_password'] != attrs['confirm_password']:
-            raise serializers.ValidationError({"password": "Password fields didn't match."})
+            raise serializers.ValidationError({
+                "password": "Password fields didn't match"
+            })
 
         try:
-            user = User.objects.get(email=attrs['email'])
+            user = User.objects.get(email=attrs['email'], is_active=True)
             otp_instance = OTP.objects.filter(
                 user=user,
                 code=attrs['otp'],
+                type='PASSWORD_RESET',
                 is_verified=True
             ).order_by('-created_at').first()
 
             if not otp_instance:
-                raise serializers.ValidationError({"otp": "Please verify your OTP first."})
+                raise serializers.ValidationError({
+                    "otp": "Please verify your OTP first"
+                })
 
             if timezone.now() > otp_instance.created_at + timedelta(minutes=15):
-                raise serializers.ValidationError({"otp": "OTP has expired. Please request a new one."})
+                raise serializers.ValidationError({
+                    "otp": "OTP has expired. Please request a new one"
+                })
 
-            self.context['user'] = user
-            self.context['otp_instance'] = otp_instance
+            attrs['user'] = user
+            return attrs
 
         except User.DoesNotExist:
-            
-            raise serializers.ValidationError({"error": "Invalid credentials."})
+            raise serializers.ValidationError({
+                "email": "No active account found with this email address"
+            })
 
-        return attrs
-    #function that sets the new password as the login password orf user
-    def save(self):
-        user = self.context['user']
+    def save(self, **kwargs):
+        user = self.validated_data['user']
         user.set_password(self.validated_data['new_password'])
         user.save()
-
-       
+        
+        # Invalidate all unused OTPs
         OTP.objects.filter(user=user, is_verified=False).update(is_verified=True)
-        return user
-
-
-class VerifyRegistrationOTPSerializer(serializers.Serializer):
-    temp_user_id = serializers.CharField()
-    email_otp = serializers.CharField(max_length=6)
-    phone_otp = serializers.CharField(max_length=6)
-
-    def validate(self, attrs):
-        temp_user_id = attrs['temp_user_id']
-        email_otp = attrs['email_otp']
-        phone_otp = attrs['phone_otp']
-        
-        cache_key = f"registration_{temp_user_id}"
-        cached_data = cache.get(cache_key)
-        
-        if not cached_data:
-            raise serializers.ValidationError({
-                "error": "Registration session expired. Please register again."
-            })
-            
-        if email_otp != cached_data['email_otp']:
-            raise serializers.ValidationError({
-                "email_otp": "Invalid email verification code."
-            })
-            
-        if phone_otp != cached_data['phone_otp']:
-            raise serializers.ValidationError({
-                "phone_otp": "Invalid phone verification code."
-            })
-            
-        self.context['cached_data'] = cached_data
-        self.context['cache_key'] = cache_key
-        return attrs
-
-    
-    def save(self):
-        user = self.context['user']
-        otp_instance = self.context['otp_instance']
-        
-        otp_instance.is_verified = True
-        otp_instance.save()
-        
-        user.email_verified = True
-        user.is_active = True 
-        user.save()
-        
-        return user
-
-
-
-class SendPhoneOTPSerializer(serializers.Serializer):
-    phone_number = serializers.CharField(max_length=15, required=True)
-
-    def validate_phone_number(self, value):
-        if not User.objects.filter(phone_number=value).exists():
-            raise serializers.ValidationError("User with this phone number does not exist.")
-        return value
-
-class VerifyPhoneOTPSerializer(serializers.Serializer):
-    phone_number = serializers.CharField(max_length=15, required=True)
-    phone_otp = serializers.CharField(max_length=6, required=True)
-
-    def validate(self, attrs):
-        phone_number = attrs['phone_number']
-        phone_otp = attrs['phone_otp']
-        
-        try:
-            user = User.objects.get(phone_number=phone_number)
-            otp_instance = OTP.objects.filter(
-                user=user,
-                code=phone_otp,
-                type='PHONE',
-                is_verified=False
-            ).order_by('-created_at').first()
-
-            if not otp_instance:
-                raise serializers.ValidationError({"phone_otp": "Invalid OTP."})
-            
-            if not otp_instance.is_valid():
-                if otp_instance.attempts >= 3:
-                    raise serializers.ValidationError({"phone_otp": "Too many attempts. Please request a new OTP."})
-                
-                otp_instance.attempts += 1
-                otp_instance.save()
-                raise serializers.ValidationError({"phone_otp": "Invalid or expired OTP."})
-
-            self.context['user'] = user
-            self.context['otp_instance'] = otp_instance
-
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"phone_otp": "Invalid phone number."})
-
-        return attrs
-    
-    def save(self):
-        user = self.context['user']
-        otp_instance = self.context['otp_instance']
-        
-        otp_instance.is_verified = True
-        otp_instance.save()
-        
-        user.phone_verified = True
-        user.save()
         
         return user
