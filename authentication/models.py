@@ -7,28 +7,19 @@ from django.utils import timezone
 from datetime import timedelta
 import logging
 from django.contrib.auth import get_user_model
-
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 class CustomUserManager(BaseUserManager):
-    def create_unverified_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError('Email is required')
-        email = self.normalize_email(email)
-        user = self.model(email=email,is_active=False,registration_pending=True,**extra_fields)
-        
-        if password:
-            user.set_password(password)
-        return user
     
-
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError('Email is required')
             
         email = self.normalize_email(email)
-        
-        user = self.model(email=email,is_active=False,**extra_fields)
+        extra_fields.setdefault('registration_pending', True)
+        extra_fields.setdefault('is_active', False)
+        user = self.model(email=email,**extra_fields)
         
         if password:
             user.set_password(password)
@@ -62,7 +53,7 @@ class User(AbstractUser):
     email_verified = models.BooleanField(default=False)
     phone_verified = models.BooleanField(default=False)
     registration_pending = models.BooleanField(default=True)
-
+     
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = [ 'phone_number']
@@ -86,16 +77,40 @@ class User(AbstractUser):
             )
         ]
 
+    @classmethod
+    def cleanup_expired_registrations(cls, email=None, phone_number=None):
+        expired_time = timezone.now() - timedelta(minutes=3)
+        
+        base_query = Q(
+            registration_pending=True,
+            created_at__lt=expired_time
+        )
+        
+        if email or phone_number:
+            specific_query = Q()
+            if email:
+                specific_query |= Q(email=email, registration_pending=True)
+            if phone_number:
+                specific_query |= Q(phone_number=phone_number, registration_pending=True)
+            
+            final_query = base_query | specific_query
+        else:
+            final_query = base_query
+            
+        deleted_count = cls.objects.filter(final_query).delete()[0]
+        return deleted_count
+
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.registration_pending:
+            self.registration_expires_at = timezone.now() + timedelta(minutes=3)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.email
 
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
-
-    def clean(self):
-        super().clean()
-        self.email = self.email.lower()
 
 
 User = get_user_model()
@@ -116,7 +131,7 @@ class OTP(models.Model):
 
     def is_valid(self):
         return (
-            timezone.now() <= self.created_at + timedelta(minutes=10) and
+            timezone.now() <= self.created_at + timedelta(minutes=3) and
             not self.is_verified and
             self.attempts < 3
         )
