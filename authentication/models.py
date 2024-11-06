@@ -151,15 +151,13 @@ class User(AbstractUser):
 
 
 User = get_user_model()
-logger = logging.getLogger(__name__)
-#OTP MODEL 
 class OTP(models.Model):
     TYPE_CHOICES = (
         ('EMAIL', 'Email'),
-        ('PASSOWROD_RESET', 'password_reset'),
+        ('PASSWORD_RESET', 'password_reset'),
         ('PHONE', 'Phone')
     )
-    user = models.ForeignKey(User, on_delete=models.CASCADE,null=True, related_name="otp_codes")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, related_name="otp_codes")
     code = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
@@ -167,18 +165,23 @@ class OTP(models.Model):
     type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='EMAIL')
 
     def is_valid(self):
+        """Check if the OTP is still valid."""
         return (
-            timezone.now() <= self.created_at + timedelta(minutes=5) and
+            timezone.now() <= self.created_at + timedelta(minutes=10) and
             not self.is_verified and
             self.attempts < 3
         )
 
     @classmethod
     def create_otp_for_user(cls, user, otp_type='EMAIL'):
-        
+        """Create a new OTP for a user after marking previous unverified OTPs as verified."""
+        # Mark previous unverified OTPs as verified
         cls.objects.filter(user=user, is_verified=False, type=otp_type).update(is_verified=True)
         
+        # Generate a new OTP code
         otp_code = ''.join([str(random.randint(0, 9)) for _ in range(6)])
         return cls.objects.create(user=user, code=otp_code, type=otp_type)
 
-
+    def time_since_creation(self):
+        """Returns the time elapsed since the OTP was created."""
+        return timezone.now() - self.created_at

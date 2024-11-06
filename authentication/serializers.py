@@ -6,6 +6,8 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import OTP
 from django.db.models import Q
+from django.core.validators import RegexValidator
+
 
 User = get_user_model()
 
@@ -26,7 +28,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         required=True,
         style={'input_type': 'password'},
-        validators=[validate_password]
+        validators=[
+            RegexValidator(
+                regex=r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$',
+                message="Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one digit, and one special character."
+            )
+        ]
     )
     confirm_password = serializers.CharField(
         write_only=True,
@@ -253,105 +260,93 @@ class VerifyOTPSerializer(serializers.Serializer):
     def validate(self, attrs):
         email = attrs['email']
         otp = attrs['otp']
-        
+
         try:
-            user = User.objects.get(email=email, is_active=True)
+            user = User.objects.get(email=email)
+
+            # Get the most recent unverified OTP for this user
             otp_instance = OTP.objects.filter(
                 user=user,
-                code=otp,
-                type='PASSWORD_RESET',
-                is_verified=False
+                is_verified=False  # Ensures we get an unverified OTP
             ).order_by('-created_at').first()
 
-            if not otp_instance:
-                raise serializers.ValidationError({
-                    "otp": "Invalid verification code"
-                })
-            
+            # Validate the OTP instance exists and matches the provided OTP code
+            if not otp_instance or otp_instance.code != otp:
+                raise serializers.ValidationError({"otp": "Invalid OTP."})
+
+            # Check if the OTP is still valid
             if not otp_instance.is_valid():
                 if otp_instance.attempts >= 3:
-                    raise serializers.ValidationError({
-                        "otp": "Too many failed attempts. Please request a new code."
-                    })
+                    raise serializers.ValidationError({"otp": "Too many attempts. Please request a new OTP."})
                 
                 otp_instance.attempts += 1
                 otp_instance.save()
-                raise serializers.ValidationError({
-                    "otp": "Invalid or expired verification code"
-                })
+                raise serializers.ValidationError({"otp": "Invalid or expired OTP."})
 
-            attrs['user'] = user
-            attrs['otp_instance'] = otp_instance
-            return attrs
+            # Store user and OTP instance in context for later use in save() if needed
+            self.context['user'] = user
+            self.context['otp_instance'] = otp_instance
 
         except User.DoesNotExist:
-            raise serializers.ValidationError({
-                "email": "No active account found with this email address"
-            })
+            raise serializers.ValidationError({"otp": "Invalid OTP."})
 
-    def save(self, **kwargs):
-        otp_instance = self.validated_data['otp_instance']
+        return attrs
+
+    def save(self):
+        otp_instance = self.context['otp_instance']
         otp_instance.is_verified = True
         otp_instance.save()
-        return self.validated_data['user']
-
+        return self.context['user']
+    
 class ResetPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
     new_password = serializers.CharField(
         write_only=True,
-        validators=[validate_password],
-        error_messages={
-            'required': 'New password is required'
-        }
+        min_length=8,
+        validators=[
+            RegexValidator(
+                regex=r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$',
+                message="Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one digit, and one special character."
+            )
+        ]
     )
-    confirm_password = serializers.CharField(
-        write_only=True,
-        error_messages={
-            'required': 'Password confirmation is required'
-        }
-    )
-
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
     def validate(self, attrs):
-        # Validate password match
         if attrs['new_password'] != attrs['confirm_password']:
-            raise serializers.ValidationError({
-                "password": "Password fields didn't match"
-            })
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
 
         try:
-            user = User.objects.get(email=attrs['email'], is_active=True)
+            user = User.objects.get(email=attrs['email'])
+            
+            # Fetch the most recent verified OTP for this user
             otp_instance = OTP.objects.filter(
                 user=user,
                 code=attrs['otp'],
-                type='PASSWORD_RESET',
-                is_verified=True
+                is_verified=True  # Check for only verified OTPs
             ).order_by('-created_at').first()
 
             if not otp_instance:
-                raise serializers.ValidationError({
-                    "otp": "Please verify your OTP first"
-                })
+                raise serializers.ValidationError({"otp": "Please verify your OTP first."})
 
+            # Check if OTP is still within validity period
             if timezone.now() > otp_instance.created_at + timedelta(minutes=15):
-                raise serializers.ValidationError({
-                    "otp": "OTP has expired. Please request a new one"
-                })
+                raise serializers.ValidationError({"otp": "OTP has expired. Please request a new one."})
 
-            attrs['user'] = user
-            return attrs
+            self.context['user'] = user
+            self.context['otp_instance'] = otp_instance
 
         except User.DoesNotExist:
-            raise serializers.ValidationError({
-                "email": "No active account found with this email address"
-            })
+            raise serializers.ValidationError({"error": "Invalid credentials."})
 
-    def save(self, **kwargs):
-        user = self.validated_data['user']
+        return attrs
+
+    def save(self):
+        user = self.context['user']
         user.set_password(self.validated_data['new_password'])
         user.save()
-        
-        # Invalidate all unused OTPs
+
+        # Optional: Mark all unverified OTPs as verified to prevent reuse
         OTP.objects.filter(user=user, is_verified=False).update(is_verified=True)
-        
+
         return user
