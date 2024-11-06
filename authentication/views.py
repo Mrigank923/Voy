@@ -429,3 +429,131 @@ class RefreshViewNew(APIView):
                 'success': False,
                 'message': 'An error occurred while refreshing token'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class ResendOTPView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+
+        try:
+            user = User.objects.get(email=email)
+            
+            # Check if an OTP exists and when it was last sent
+            otp_instance = OTP.objects.filter(user=user).order_by('-created_at').first()
+            if otp_instance:
+                time_since_last_otp = timezone.now() - otp_instance.created_at
+                if time_since_last_otp < timedelta(seconds=30):
+                    return Response(
+                        {"success": False, "message": "Please wait 30 seconds before requesting a new OTP."},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS
+                    )
+            
+            # Create a new OTP for the user
+            new_otp = OTP.create_otp_for_user(user)
+            
+            # Send the new OTP via email
+            send_mail(
+                'Resend Password Reset OTP',
+                f'Your new OTP for password reset is: {new_otp.code}\n'
+                f'This code will expire in 10 minutes.',
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+                fail_silently=False,
+            )
+            return Response(
+                {'success': True, "message": "A new OTP has been sent to the registered email."},
+                status=status.HTTP_200_OK
+            )
+        
+        except User.DoesNotExist:
+            return Response(
+                {"success": False, "message": "User with this email does not exist."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Failed to resend OTP to {email}: {str(e)}")
+            return Response(
+                {"success": False, "message": "Failed to resend OTP. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class ResendEmailOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        try:
+            email = request.data.get('email')
+            if not email:
+                return Response({
+                    'success': False,
+                    'message': 'Email is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            user = User.objects.filter(email=email).first()
+            if not user:
+                return Response({
+                    'success': False,
+                    'message': 'User with this email does not exist'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Create and send a new OTP for email verification
+            email_otp = OTP.create_otp_for_user(user, 'EMAIL')
+            send_mail(
+                'Email Verification OTP',
+                f'Your OTP for email verification is: {email_otp.code}\nThis code will expire in 10 minutes.',
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+                fail_silently=False,
+            )
+
+            return Response({
+                'success': True,
+                'message': 'A new OTP has been sent to your email address.'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Failed to resend email OTP: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Failed to resend OTP. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class ResendPhoneOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        try:
+            phone_number = request.data.get('phone_number')
+            if not phone_number:
+                return Response({
+                    'success': False,
+                    'message': 'Phone number is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            user = User.objects.filter(phone_number=phone_number).first()
+            if not user:
+                return Response({
+                    'success': False,
+                    'message': 'User with this phone number does not exist'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Create and send a new OTP for phone verification
+            phone_otp = OTP.create_otp_for_user(user, 'PHONE')
+            
+            api_key = settings.TWOFACTOR_API_KEY
+            url = f"https://2factor.in/API/V1/{api_key}/SMS/{phone_number}/{phone_otp.code}"
+            response = requests.get(url)
+
+            if response.json()['Status'] != 'Success':
+                raise Exception("Failed to send phone verification code")
+
+            return Response({
+                'success': True,
+                'message': 'A new OTP has been sent to your phone number.'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Failed to resend phone OTP: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Failed to resend OTP. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
