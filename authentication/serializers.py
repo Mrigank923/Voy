@@ -6,6 +6,8 @@ from django.utils import timezone
 from datetime import timedelta
 from .models import OTP
 from django.db.models import Q
+from django.core.validators import RegexValidator
+
 
 User = get_user_model()
 
@@ -26,7 +28,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         required=True,
         style={'input_type': 'password'},
-        validators=[validate_password]
+        validators=[
+            RegexValidator(
+                regex=r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$',
+                message="Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one digit, and one special character."
+            )
+        ]
     )
     confirm_password = serializers.CharField(
         write_only=True,
@@ -294,9 +301,17 @@ class VerifyOTPSerializer(serializers.Serializer):
 class ResetPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
-    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        validators=[
+            RegexValidator(
+                regex=r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$',
+                message="Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one digit, and one special character."
+            )
+        ]
+    )
     confirm_password = serializers.CharField(write_only=True, min_length=8)
-
     def validate(self, attrs):
         if attrs['new_password'] != attrs['confirm_password']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
