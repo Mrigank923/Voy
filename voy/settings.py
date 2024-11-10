@@ -15,6 +15,9 @@ from decouple import config
 from datetime import timedelta
 import os
 import dj_database_url
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 
 
@@ -49,6 +52,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'authentication',
+    'cloudinary',
 ]
 
 MIDDLEWARE = [
@@ -172,6 +176,12 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 TWOFACTOR_API_KEY = config('TWOFACTOR_API_KEY')
+
+cloudinary.config(
+    cloud_name = config('CLOUD_NAME'),
+    api_key = config('CLOUD_API_KEY'),
+    api_secret = config('CLOUD_API_SECRET')
+)
 
 
 

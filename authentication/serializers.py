@@ -16,9 +16,13 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ('id', 'email', 'phone_number', 'first_name', 'last_name', 'full_name', 
-                 'created_at', 'email_verified', 'phone_verified')
-        read_only_fields = ('id', 'created_at', 'email_verified', 'phone_verified')
+        fields = (
+            'id', 'email', 'phone_number', 'first_name', 'last_name', 
+            'full_name', 'profile_photo', 'gender',
+            'emergency_contact_phone','email_verified', 'phone_verified', 'created_at'
+        )
+        read_only_fields = ('id', 'email', 'email_verified', 'phone_verified', 'created_at')
+
 
     def get_full_name(self, obj):
         return obj.get_full_name()
@@ -350,3 +354,8 @@ class ResetPasswordSerializer(serializers.Serializer):
         OTP.objects.filter(user=user, is_verified=False).update(is_verified=True)
 
         return user
+    
+
+
+    
+    

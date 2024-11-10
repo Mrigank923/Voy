@@ -10,7 +10,7 @@ from django.db import models, IntegrityError
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
-
+from cloudinary.models import CloudinaryField
 
 class CustomUserManager(BaseUserManager):
     
@@ -78,6 +78,15 @@ class User(AbstractUser):
     email_verified = models.BooleanField(default=False)
     phone_verified = models.BooleanField(default=False)
     registration_pending = models.BooleanField(default=True)
+    profile_photo = CloudinaryField('profile_photo', null=True, blank=True)
+    gender = models.CharField(max_length=10, choices=[
+        ('MALE', 'Male'),
+        ('FEMALE', 'Female'),
+        ('OTHER', 'Other')
+    ], blank=True, null=True)
+    emergency_contact_phone = models.CharField(max_length=15, blank=True, null=True)
+
+
      
 
     USERNAME_FIELD = 'email'
