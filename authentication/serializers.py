@@ -19,9 +19,9 @@ class UserSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'email', 'phone_number', 'first_name', 'last_name', 
             'full_name', 'profile_photo', 'gender',
-            'emergency_contact_phone','email_verified', 'phone_verified', 'created_at'
+            'emergency_contact_phone','email_verified', 'phone_verified', 'created_at','drivers_license_image', 'is_driver_verified'
         )
-        read_only_fields = ('id', 'email', 'email_verified', 'phone_verified', 'created_at')
+        read_only_fields = ('id', 'email', 'email_verified', 'phone_verified', 'created_at', 'is_driver_verified')
 
 
     def get_full_name(self, obj):

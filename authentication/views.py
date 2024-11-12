@@ -402,6 +402,7 @@ class UserView(APIView):
         try:
             # Handle profile photo upload
             profile_photo = request.FILES.get('profile_photo')
+            drivers_license = request.FILES.get('drivers_license_image')
             if profile_photo:
                 try:
                     # Upload to cloudinary
@@ -417,6 +418,22 @@ class UserView(APIView):
                     return Response({
                         'success': False,
                         'message': 'Failed to upload profile photo'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+            if drivers_license:
+                try:
+                    upload_result = cloudinary.uploader.upload(
+                        drivers_license,
+                        folder='drivers_licenses/',
+                        allowed_formats=['jpg', 'png', 'jpeg', 'pdf'],
+                        max_file_size=9000000  
+                    )
+                    request.data['drivers_license_image'] = upload_result['public_id']
+                except Exception as e:
+                    logger.error(f"Cloudinary upload error: {str(e)}")
+                    return Response({
+                        'success': False,
+                        'message': 'Failed to upload driver license photo'
                     }, status=status.HTTP_400_BAD_REQUEST)
 
             serializer = UserSerializer(
