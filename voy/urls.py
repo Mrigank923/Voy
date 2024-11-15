@@ -23,5 +23,6 @@ urlpatterns = [
     path('', home_view),
     path('admin/', admin.site.urls),
     path('api/auth/', include('authentication.urls')),
+    path('api/rides/', include('rides.urls')),
 
 ]

@@ -29,6 +29,6 @@ psycopg2
 psycopg2-binary>=2.9.9
 cloudinary
 djangorestframework-gis
-channels
-redis
-daphne
+
+
+
