@@ -24,3 +24,11 @@ class RideDetailsSerializer(serializers.ModelSerializer):
             
         return super().create(validated_data)
 
+class PassengerRideRequestSerializer(serializers.ModelSerializer):
+    passenger_name = serializers.CharField(source='passenger.username', read_only=True)
+    
+    class Meta:
+        model = PassengerRideRequest
+        fields = ['id', 'passenger_name', 'ride', 
+                 'seats_needed', 'status', 'created_at']
+        read_only_fields = ['passenger', 'status']
