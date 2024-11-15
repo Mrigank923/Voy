@@ -1,3 +1,5 @@
+docker-compose.yml
+dockerfile
 .env
 debug.log
 debug.log
