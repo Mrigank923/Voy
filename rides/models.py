@@ -22,8 +22,7 @@ class RideDetails(models.Model):
         ('CANCELLED', 'Cancelled')
     ]
 
-    driver = models.ForeignKey(User,on_delete=models.CASCADE,related_name='driver_rides'
-)
+    driver = models.ForeignKey(User,on_delete=models.CASCADE,related_name='driver_rides')
     start_location = models.CharField(max_length=255)
     end_location = models.CharField(max_length=255)
     start_point = models.PointField(srid=4326, null=True, blank=True)
@@ -31,13 +30,8 @@ class RideDetails(models.Model):
     route_line = models.LineStringField(srid=4326,null=True,blank=True)
     start_time = models.DateTimeField()
     available_seats = models.PositiveIntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(8)]
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='PENDING'
-    )
+        validators=[MinValueValidator(1), MaxValueValidator(8)])
+    status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='PENDING')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -46,6 +40,10 @@ class RideDetails(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'start_time']),
+            models.Index(fields=['driver', 'status'])
+        ]
 
 
 class PassengerRideRequest(models.Model):
@@ -53,7 +51,9 @@ class PassengerRideRequest(models.Model):
         ('PENDING', 'Pending'),
         ('CONFIRMED', 'Confirmed'),
         ('CANCELLED', 'Cancelled'),
-        ('REJECTED', 'Rejected')
+        ('REJECTED', 'Rejected'),
+        ('IN_VEHICLE', 'In Vehicle'),
+        ('COMPLETED', 'Completed')
     ]
 
     passenger = models.ForeignKey(User,on_delete=models.CASCADE,related_name='Passenger_ride_requests')
@@ -68,5 +68,9 @@ class PassengerRideRequest(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'ride']),
+            models.Index(fields=['passenger', 'status'])
+        ]
 
 

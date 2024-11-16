@@ -1,4 +1,4 @@
-docker-compose.yml
+docker-compose.yaml
 dockerfile
 .env
 debug.log

@@ -30,27 +30,24 @@ class FindRidesView(APIView):
     
     def get(self, request):
         try:
-            destination_point = request.query_params.get('destination_point')
-            if not destination_point:
-                return Response(
-                    {"error": "destination_point parameter is required"}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Parse GeoJSON point
-            point_data = json.loads(destination_point)
-            coords = point_data['coordinates']
-            end_point = Point(coords[0], coords[1], srid=4326)
+            #search params
+            pickup_point = json.loads(request.query_params.get('pickup_point'))
+            destination_point = json.loads(request.query_params.get('destination_point'))
+            seats_needed = int(request.query_params.get('seats_needed', 1))
+            search_radius = float(request.query_params.get('radius', 5000))  # 5km default
             
-            # Get search radius (default 5km)
-            search_radius = float(request.query_params.get('radius', 5000))
-
+            # Convert to Django Point objects
+            pickup = Point(pickup_point['coordinates'][0], pickup_point['coordinates'][1], srid=4326)
+            destination = Point(destination_point['coordinates'][0], destination_point['coordinates'][1], srid=4326)
+            
             available_rides = RideDetails.objects.filter(
                 status='PENDING',
-                available_seats__gte=1
+                available_seats__gte=seats_needed
             ).annotate(
-                distance_to_destination=Distance('end_point', end_point)
+                distance_to_pickup=Distance('start_point', pickup),
+                distance_to_destination=Distance('end_point', destination)
             ).filter(
+                distance_to_pickup__lte=D(m=search_radius),
                 distance_to_destination__lte=D(m=search_radius)
             ).order_by('start_time')
 
@@ -58,10 +55,8 @@ class FindRidesView(APIView):
             return Response(serializer.data)
 
         except (json.JSONDecodeError, ValueError) as e:
-            return Response(
-                {"error": str(e)}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class CreateRideRequestView(APIView):
     permission_classes = [IsAuthenticated]
@@ -70,7 +65,7 @@ class CreateRideRequestView(APIView):
         try:
             ride = get_object_or_404(RideDetails, id=ride_id, status='PENDING')
             
-            # Check if user already has a pending request for this ride
+            #does a pending request already exist for this ride?
             existing_request = PassengerRideRequest.objects.filter(
                 passenger=request.user,
                 ride=ride,
@@ -90,15 +85,20 @@ class CreateRideRequestView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            ride_request = PassengerRideRequest.objects.create(
-                passenger=request.user,
-                ride=ride,
-                seats_needed=seats_needed,
-                status='PENDING'
-            )
+            request_data = {
+                'ride': ride_id,
+                'seats_needed': seats_needed,
+                'pickup_location': request.data.get('pickup_location'),
+                'dropoff_location': request.data.get('dropoff_location'),
+                'pickup_point': request.data.get('pickup_point'),
+                'dropoff_point': request.data.get('dropoff_point')
+            }
             
-            serializer = PassengerRideRequestSerializer(ride_request)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            serializer = PassengerRideRequestSerializer(data=request_data)
+            if serializer.is_valid():
+                serializer.save(passenger=request.user)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
         except RideDetails.DoesNotExist:
             return Response(
@@ -110,7 +110,7 @@ class ListRideRequestsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request, ride_id):
-        # Ensure the user is the driver of the ride
+        # make sure the user is the driver of the ride
         ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
         
         requests = PassengerRideRequest.objects.filter(
@@ -163,3 +163,53 @@ class ManageRideRequestView(APIView):
             "available_seats": ride.available_seats
         })
 
+class RideStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, ride_id):
+        ride = get_object_or_404(RideDetails, id=ride_id)
+        
+        # Ensure user is the driver
+        if request.user != ride.driver:
+            return Response(
+                {"error": "Only the driver can update ride status"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        new_status = request.data.get('status')
+        if new_status not in ['ONGOING', 'COMPLETED', 'CANCELLED']:
+            return Response(
+                {"error": "Invalid status"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update ride status
+        ride.status = new_status
+        ride.save()
+        
+        # Update all confirmed requests if ride is completed or cancelled
+        if new_status in ['COMPLETED', 'CANCELLED']:
+            ride.requests.filter(status='CONFIRMED').update(status=new_status)
+        
+        return Response({"message": f"Ride status updated to {new_status}"})
+    
+
+class PassengerStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, request_id):
+        ride_request = get_object_or_404(PassengerRideRequest, 
+                                       id=request_id,
+                                       passenger=request.user)
+        
+        new_status = request.data.get('status')
+        if new_status != 'IN_VEHICLE':
+            return Response(
+                {"error": "Invalid status"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        ride_request.status = new_status
+        ride_request.save()
+        
+        return Response({"message": "Status updated to IN_VEHICLE"})
