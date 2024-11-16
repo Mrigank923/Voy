@@ -21,15 +21,25 @@ from voy.routing import websocket_urlpatterns
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'voy.settings')
 
 
+
+
+from channels import routing
+from django.urls import path
+from rides.consumers import RideLocationConsumer
+
+
+
+
+
+
 application = ProtocolTypeRouter({
     "http": get_asgi_application(),
     "websocket": AuthMiddlewareStack(
         URLRouter(
-            websocket_urlpatterns  
+            websocket_urlpatterns
         )
     ),
 })
-
 
 
 

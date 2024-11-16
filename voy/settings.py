@@ -38,6 +38,7 @@ DEBUG = True
 #FIXME this is only for development testing purposes, remove this in main production
 ALLOWED_HOSTS = ["*"]
 
+print("DEBUG from settings:", DEBUG)
 
 # Application definition
 

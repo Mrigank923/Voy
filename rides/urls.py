@@ -8,8 +8,10 @@
 
 from django.urls import path
 from .views import (CreateRideView,FindRidesView)
-
+from rides.consumers import RideLocationConsumer
 urlpatterns = [
     path('create/', CreateRideView.as_view(), name='create_ride'),
     path('find/', FindRidesView.as_view(), name='find_rides'),
+    path('<int:ride_id>/location/', RideLocationConsumer.as_asgi()),
 ]
+

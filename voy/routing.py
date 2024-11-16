@@ -1,8 +1,9 @@
 
 
 from django.urls import path
-from rides.consumers import RideConsumer  #
+from rides.consumers import RideLocationConsumer
+
 
 websocket_urlpatterns = [
-    path("ws/ride/<int:ride_id>/", RideConsumer.as_asgi()), 
+    path("ws/rides/<int:ride_id>/location/", RideLocationConsumer.as_asgi()), 
 ]
