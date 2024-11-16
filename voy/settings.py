@@ -18,7 +18,7 @@ import dj_database_url
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-
+from django.contrib.gis.gdal import GDAL_VERSION
 
 
 
@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'authentication',
     'cloudinary',
+    'rides',
+    'django.contrib.gis',
 ]
 
 MIDDLEWARE = [
@@ -96,13 +98,33 @@ WSGI_APPLICATION = 'voy.wsgi.application'
 #     }
 # }
 
-DATABASES ={
-    "default":dj_database_url.parse(config('DATABASE_URL'))
+# db_config = dj_database_url.parse(config('DATABASE_URL'))
+# db_config['ENGINE'] = 'django.contrib.gis.db.backends.postgis'  # Force the engine to use PostGIS
+# DATABASES = {
+#     'default': db_config
+# }
+
+
+
+#local postgresql database
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'NAME': 'voy_db',
+        'USER': 'voy_user',
+        'PASSWORD': 'voy_password',
+        'HOST': 'db',
+        'PORT': '5432',
+    }
 }
+GDAL_LIBRARY_PATH = os.getenv('GDAL_LIBRARY_PATH')
+GEOS_LIBRARY_PATH = os.getenv('GEOS_LIBRARY_PATH')
+
 
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {

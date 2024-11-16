@@ -85,6 +85,11 @@ class User(AbstractUser):
         ('OTHER', 'Other')
     ], blank=True, null=True)
     emergency_contact_phone = models.CharField(max_length=15, blank=True, null=True)
+    drivers_license_image = CloudinaryField('drivers_license', null=True, blank=True)
+    is_driver_verified = models.BooleanField(default=True)
+    is_driver = models.BooleanField(default=True)
+    current_role = models.CharField(max_length=10, choices=[('DRIVER', 'Driver'), ('PASSENGER', 'Passenger')], default='PASSENGER')
+
 
 
      
@@ -137,6 +142,11 @@ class User(AbstractUser):
 
 
     def save(self, *args, **kwargs):
+        if self.drivers_license_image:
+            self.is_driver_verified = True
+        else:
+            self.is_driver_verified = False
+
         if self._state.adding and self.registration_pending:
             User.objects.filter(
                 Q(email=self.email) | Q(phone_number=self.phone_number),
