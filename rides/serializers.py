@@ -1,93 +1,93 @@
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
+from django.contrib.gis.db.models.functions import Distance
+from django.contrib.gis.measure import D
 from .models import RideDetails, PassengerRideRequest
 
+class PointFieldSerializer(serializers.Serializer):
+    type = serializers.CharField()
+    coordinates = serializers.ListField(
+        child=serializers.FloatField(),
+        min_length=2,
+        max_length=2
+    )
+
+    def validate(self, data):
+        if data['type'] != 'Point':
+            raise serializers.ValidationError("Only Point type is supported")
+        return Point(data['coordinates'][0], data['coordinates'][1], srid=4326)
+
 class RideDetailsSerializer(serializers.ModelSerializer):
-    driver_name = serializers.CharField(source='driver.username', read_only=True)
-    start_point = serializers.JSONField()
-    end_point = serializers.JSONField()
+    driver_name = serializers.SerializerMethodField()
+    start_point = PointFieldSerializer()
+    end_point = PointFieldSerializer()
     
     class Meta:
         model = RideDetails
-        fields = ['id', 'driver_name', 'start_location', 'end_location', 
-                 'start_point', 'end_point', 'start_time', 'available_seats', 
-                 'status', 'created_at']
+        fields = '__all__'
         read_only_fields = ['driver', 'status']
 
-    def validate_start_point(self, value):
-        try:
-            if not isinstance(value, dict) or 'type' not in value or value['type'] != 'Point':
-                raise serializers.ValidationError("Invalid GeoJSON Point format")
-            return Point(value['coordinates'][0], value['coordinates'][1], srid=4326)
-        except (KeyError, IndexError, TypeError):
-            raise serializers.ValidationError("Invalid coordinates format")
+    def get_driver_name(self, obj):
+        return obj.driver.get_full_name() or obj.driver.email
 
-    def validate_end_point(self, value):
-        try:
-            if not isinstance(value, dict) or 'type' not in value or value['type'] != 'Point':
-                raise serializers.ValidationError("Invalid GeoJSON Point format")
-            return Point(value['coordinates'][0], value['coordinates'][1], srid=4326)
-        except (KeyError, IndexError, TypeError):
-            raise serializers.ValidationError("Invalid coordinates format")
+    def create(self, validated_data):
+        validated_data['driver'] = self.context['request'].user
+        return super().create(validated_data)
 
     def to_representation(self, instance):
-        ret = super().to_representation(instance)
-        # Convert Point objects back to GeoJSON
-        ret['start_point'] = {
-            'type': 'Point',
-            'coordinates': [instance.start_point.x, instance.start_point.y]
-        }
-        ret['end_point'] = {
-            'type': 'Point',
-            'coordinates': [instance.end_point.x, instance.end_point.y]
-        }
-        return ret
+        data = super().to_representation(instance)
+        for field in ['start_point', 'end_point']:
+            point = getattr(instance, field)
+            if point:
+                data[field] = {
+                    'type': 'Point',
+                    'coordinates': [point.x, point.y]
+                }
+        return {'success': True, 'data': data}
 
-class PassengerRideRequestSerializer(serializers.ModelSerializer):
-    passenger_name = serializers.CharField(source='passenger.username', read_only=True)
-    pickup_point = serializers.JSONField(required=True)
-    dropoff_point = serializers.JSONField(required=True)
+class RideRequestSerializer(serializers.ModelSerializer):
+    passenger_name = serializers.SerializerMethodField()
+    pickup_point = PointFieldSerializer()
+    dropoff_point = PointFieldSerializer()
     
     class Meta:
         model = PassengerRideRequest
-        fields = ['id', 'passenger_name', 'ride', 'pickup_location', 'dropoff_location',
-                 'pickup_point', 'dropoff_point', 'seats_needed', 'status', 'created_at']
+        fields = '__all__'
         read_only_fields = ['passenger', 'status']
 
-    def validate_pickup_point(self, value):
-        try:
-            if not isinstance(value, dict) or 'type' not in value or value['type'] != 'Point':
-                raise serializers.ValidationError("Invalid GeoJSON Point format")
-            return Point(value['coordinates'][0], value['coordinates'][1], srid=4326)
-        except (KeyError, IndexError, TypeError):
-            raise serializers.ValidationError("Invalid coordinates format")
+    def get_passenger_name(self, obj):
+        return obj.passenger.get_full_name() or obj.passenger.email
 
-    def validate_pickup_point(self, value):
-        try:
-            if not isinstance(value, dict) or 'type' not in value or value['type'] != 'Point':
-                raise serializers.ValidationError("Invalid GeoJSON Point format")
-            return Point(value['coordinates'][0], value['coordinates'][1], srid=4326)
-        except (KeyError, IndexError, TypeError):
-            raise serializers.ValidationError("Invalid coordinates format")
+    def validate(self, data):
+        ride = data['ride']
+        seats = data.get('seats_needed', 1)
+        
+        if ride.status != 'PENDING':
+            raise serializers.ValidationError("This ride is no longer accepting requests")
+        
+        if seats > ride.available_seats:
+            raise serializers.ValidationError(f"Only {ride.available_seats} seats available")
+        
+        if PassengerRideRequest.objects.filter(
+            passenger=self.context['request'].user,
+            ride=ride,
+            status='PENDING'
+        ).exists():
+            raise serializers.ValidationError("You already have a pending request for this ride")
+            
+        return data
 
-    def validate_dropoff_point(self, value):
-        try:
-            if not isinstance(value, dict) or 'type' not in value or value['type'] != 'Point':
-                raise serializers.ValidationError("Invalid GeoJSON Point format")
-            return Point(value['coordinates'][0], value['coordinates'][1], srid=4326)
-        except (KeyError, IndexError, TypeError):
-            raise serializers.ValidationError("Invalid coordinates format")
+    def create(self, validated_data):
+        validated_data['passenger'] = self.context['request'].user
+        return super().create(validated_data)
 
     def to_representation(self, instance):
-        ret = super().to_representation(instance)
-        if instance.pickup_point:
-            ret['pickup_point'] = {
-                'type': 'Point',
-                'coordinates': [instance.pickup_point.x, instance.pickup_point.y]
-            }
-        if instance.dropoff_point:
-            ret['dropoff_point'] = {
-                'type': 'Point',
-                'coordinates': [instance.dropoff_point.x, instance.dropoff_point.y]
-            }
-        return ret
+        data = super().to_representation(instance)
+        for field in ['pickup_point', 'dropoff_point']:
+            point = getattr(instance, field)
+            if point:
+                data[field] = {
+                    'type': 'Point',
+                    'coordinates': [point.x, point.y]
+                }
+        return {'success': True, 'data': data}
