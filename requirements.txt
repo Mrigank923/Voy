@@ -33,5 +33,7 @@ channels==4.0.0
 
 redis
 daphne
+channels-redis>=4.0.0
+
 
 

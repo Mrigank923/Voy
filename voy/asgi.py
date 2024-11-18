@@ -8,39 +8,27 @@ https://docs.djangoproject.com/en/5.1/howto/deployment/asgi/
 """
 
 import os
+import django
 from django.core.asgi import get_asgi_application
 
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
+from rides.middleware import TokenAuthMiddleware  
+from voy.routing import websocket_urlpatterns
 
-
-from voy.routing import websocket_urlpatterns  
-
+from rides import consumers 
 
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'voy.settings')
-
-
-
-
-from channels import routing
-from django.urls import path
-from rides.consumers import RideLocationConsumer
-
-
-
+django.setup()
 
 
 
 application = ProtocolTypeRouter({
     "http": get_asgi_application(),
-    "websocket": AuthMiddlewareStack(
+    "websocket": TokenAuthMiddleware(
         URLRouter(
             websocket_urlpatterns
         )
     ),
 })
-
-
-
-

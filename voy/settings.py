@@ -43,6 +43,7 @@ print("DEBUG from settings:", DEBUG)
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -56,7 +57,7 @@ INSTALLED_APPS = [
     'cloudinary',
     'rides',
     'django.contrib.gis',
-    'channels'
+    'channels',
     
 ]
 
@@ -92,14 +93,17 @@ WSGI_APPLICATION = 'voy.wsgi.application'
 ASGI_APPLICATION = 'voy.asgi.application'
 
 
+
+
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [('redis', 6379)],
         },
     },
 }
+
 
 
 # Database
