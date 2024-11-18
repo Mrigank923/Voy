@@ -15,6 +15,8 @@ import requests
 from django.http import JsonResponse
 import random
 from django.db.models import Q
+import cloudinary.uploader
+
 
 from .serializers import (
     RegisterSerializer, 
@@ -395,6 +397,77 @@ class UserView(APIView):
                 'success': False,
                 'message': 'An error occurred while fetching user data'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    def put(self, request):
+        try:
+            # Handle profile photo upload
+            profile_photo = request.FILES.get('profile_photo')
+            drivers_license = request.FILES.get('drivers_license_image')
+            if profile_photo:
+                try:
+                    # Upload to cloudinary
+                    upload_result = cloudinary.uploader.upload(
+                        profile_photo,
+                        folder='profile_photos/',
+                        allowed_formats=['jpg', 'png', 'jpeg'],
+                        max_file_size=9000000  
+                    )
+                    request.data['profile_photo'] = upload_result['public_id']
+                except Exception as e:
+                    logger.error(f"Cloudinary upload error: {str(e)}")
+                    return Response({
+                        'success': False,
+                        'message': 'Failed to upload profile photo'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+            if drivers_license:
+                try:
+                    upload_result = cloudinary.uploader.upload(
+                        drivers_license,
+                        folder='drivers_licenses/',
+                        allowed_formats=['jpg', 'png', 'jpeg', 'pdf'],
+                        max_file_size=9000000  
+                    )
+                    request.data['drivers_license_image'] = upload_result['public_id']
+                except Exception as e:
+                    logger.error(f"Cloudinary upload error: {str(e)}")
+                    return Response({
+                        'success': False,
+                        'message': 'Failed to upload driver license photo'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            serializer = UserSerializer(
+                request.user,
+                data=request.data,
+                partial=True
+            )
+            
+            if serializer.is_valid():
+                if profile_photo and request.user.profile_photo:
+                    try:
+                        cloudinary.uploader.destroy(request.user.profile_photo.public_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete old profile photo: {str(e)}")
+
+                serializer.save()
+                return Response({
+                    'success': True,
+                    'message': 'Profile updated successfully',
+                    'user': serializer.data
+                })
+            
+            return Response({
+                'success': False,
+                'message': 'Validation failed',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.error(f"Profile update error: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Failed to update profile'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class RefreshViewNew(APIView):
     permission_classes = [AllowAny]
@@ -557,3 +630,5 @@ class ResendPhoneOTPView(APIView):
                 'success': False,
                 'message': 'Failed to resend OTP. Please try again later.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
