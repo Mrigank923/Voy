@@ -6,9 +6,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.gis.db.models.functions import Distance
+from django.shortcuts import get_object_or_404
 from django.contrib.gis.measure import D
 from .models import RideDetails, PassengerRideRequest
-from .serializers import RideDetailsSerializer
+from .serializers import RideDetailsSerializer, RideSearchSerializer, RideRequestSerializer, RideActionSerializer, RideStatusSerializer, PassengerStatusSerializer
 from rest_framework import serializers
 import json
 from django.contrib.gis.geos import Point
@@ -18,47 +19,71 @@ class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        serializer = RideDetailsSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(driver=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = RideDetailsSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class FindRidesView(APIView):
     permission_classes = [IsAuthenticated]
     
-    def get(self, request):
-        try:
-            destination_point = request.query_params.get('destination_point')
-            if not destination_point:
-                return Response(
-                    {"error": "destination_point parameter is required"}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+    def post(self, request):
+        serializer = RideSearchSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        rides = serializer.get_available_rides()
+        return Response({
+            'success': True,
+            'data': RideDetailsSerializer(rides, many=True).data
+        })
 
-            # Parse GeoJSON point
-            point_data = json.loads(destination_point)
-            coords = point_data['coordinates']
-            end_point = Point(coords[0], coords[1], srid=4326)
-            
-            # Get search radius (default 5km)
-            search_radius = float(request.query_params.get('radius', 5000))
+class CreateRideRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, ride_id):
+        data = {**request.data, 'ride': ride_id}
+        serializer = RideRequestSerializer(data=data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-            available_rides = RideDetails.objects.filter(
-                status='PENDING',
-                available_seats__gte=1
-            ).annotate(
-                distance_to_destination=Distance('end_point', end_point)
-            ).filter(
-                distance_to_destination__lte=D(m=search_radius)
-            ).order_by('start_time')
+class ListRideRequestsView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, ride_id):
+        ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
+        requests = PassengerRideRequest.objects.filter(ride=ride, status='PENDING')
+        return Response(RideRequestSerializer(requests, many=True).data)
 
-            serializer = RideDetailsSerializer(available_rides, many=True)
-            return Response(serializer.data)
+class ManageRideRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, request_id):
+        ride_request = get_object_or_404(PassengerRideRequest, id=request_id)
+        serializer = RideActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.perform_action(ride_request, request.user)
+        return Response({'success': True, 'data': result})
 
-        except (json.JSONDecodeError, ValueError) as e:
-            return Response(
-                {"error": str(e)}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+class RideStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, ride_id):
+        ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
+        serializer = RideStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.update_status(ride)
+        return Response({'success': True, 'data': result})
 
+class PassengerStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, request_id):
+        ride_request = get_object_or_404(
+            PassengerRideRequest,
+            id=request_id,
+            passenger=request.user
+        )
+        serializer = PassengerStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.update_status(ride_request)
+        return Response({'success': True, 'data': result})
