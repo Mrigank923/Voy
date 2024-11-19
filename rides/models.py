@@ -38,6 +38,7 @@ class RideDetails(models.Model):
         super().save(*args, **kwargs)
 
 
+
     class Meta:
         ordering = ['-created_at']
         indexes = [

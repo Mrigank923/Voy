@@ -217,6 +217,10 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 TWOFACTOR_API_KEY = config('TWOFACTOR_API_KEY')
 
-
+cloudinary.config(
+    cloud_name = config('CLOUD_NAME'),
+    api_key = config('CLOUD_API_KEY'),
+    api_secret = config('CLOUD_API_SECRET')
+)
 
 
