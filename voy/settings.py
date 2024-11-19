@@ -38,10 +38,12 @@ DEBUG = True
 #FIXME this is only for development testing purposes, remove this in main production
 ALLOWED_HOSTS = ["*"]
 
+print("DEBUG from settings:", DEBUG)
 
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -55,6 +57,8 @@ INSTALLED_APPS = [
     'cloudinary',
     'rides',
     'django.contrib.gis',
+    'channels',
+    
 ]
 
 MIDDLEWARE = [
@@ -86,6 +90,20 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'voy.wsgi.application'
+ASGI_APPLICATION = 'voy.asgi.application'
+
+
+
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [('redis', 6379)],
+        },
+    },
+}
+
 
 
 # Database
@@ -204,6 +222,5 @@ cloudinary.config(
     api_key = config('CLOUD_API_KEY'),
     api_secret = config('CLOUD_API_SECRET')
 )
-
 
 

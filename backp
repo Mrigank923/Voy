@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgis/postgis:15-3.3
@@ -16,15 +14,21 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    # Add this to ensure PostGIS extension is created
     command: >
       bash -c "
-        docker-entrypoint.sh postgres &
-        sleep 10 &&
-        psql -U voy_user -d voy_db -c 'CREATE EXTENSION IF NOT EXISTS postgis;' &&
-        psql -U voy_user -d voy_db -c 'CREATE EXTENSION IF NOT EXISTS postgis_topology;'
+        docker-entrypoint.sh postgres & 
+        sleep 10 && 
+        psql -U voy_user -d voy_db -c '
+        ;' && 
+        psql -U voy_user -d voy_db -c 'CREATE EXTENSION IF NOT EXISTS postgis_topology;' 
         wait
+        daphne voy.asgi:application"
       "
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
 
   web:
     build: .
@@ -39,116 +43,18 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgis://voy_user:voy_password@db:5432/voy_db
-      # Add these environment variables
       - GDAL_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgdal.so
       - GEOS_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/libgeos_c.so
       - PYTHONUNBUFFERED=1
     depends_on:
       db:
         condition: service_healthy
-  redis:
-    image: redis:alpine
-    ports:
-      - "6379:6379"
+      redis:
+        condition: service_healthy
+
+networks:
+  default:
+    driver: bridge
+
 volumes:
   postgres_data:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

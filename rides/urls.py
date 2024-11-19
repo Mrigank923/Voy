@@ -16,7 +16,7 @@ from .views import (
     RideStatusView,
     PassengerStatusView
 )
-
+from rides.consumers import RideLocationConsumer
 urlpatterns = [
     #driver patterns wil the these
     path('driver/create/', CreateRideView.as_view(), name='driver-create-ride'),
@@ -24,8 +24,9 @@ urlpatterns = [
     path('driver/requests/<int:ride_id>/', ListRideRequestsView.as_view(), name='driver-list-requests'),
     path('driver/manage-request/<int:request_id>/', ManageRideRequestView.as_view(), name='driver-manage-request'),
     #passenger patterns will be these
-    path('passenger/available/', FindRidesView.as_view(), name='passenger-find-rides'),
+    path('passenger/search/', FindRidesView.as_view(), name='passenger-search-rides'),
     path('passenger/<int:ride_id>/request/', CreateRideRequestView.as_view(), name='passenger-request-ride'),
     path('passenger/request/<int:request_id>/status/', PassengerStatusView.as_view(), name='passenger-update-status'),
 
 ]
+
