@@ -252,11 +252,14 @@ class RideStatusDetailsSerializer(serializers.ModelSerializer):
         return {
             'id': obj.driver.id,
             'name': obj.driver.get_full_name() or obj.driver.email,
-            'rating': obj.driver.rating_as_driver
+            'rating': obj.driver.rating_as_driver,
+            'vehicle_number': obj.driver.vehicle_number,
+            'vehicle_model': obj.driver.vehicle_model,
+            'completed_rides_as_driver': obj.driver.completed_rides_as_driver
         }
 
     def get_passenger_requests(self, obj):
-        requests = obj.requests.all()
+        requests = obj.requests.filter(status='CONFIRMED')
         return [{
             'request_id': req.id,
             'passenger_id': req.passenger.id,
@@ -267,4 +270,5 @@ class RideStatusDetailsSerializer(serializers.ModelSerializer):
             'status': req.status,
             'created_at': req.created_at
         } for req in requests]
+
 

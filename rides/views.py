@@ -23,6 +23,11 @@ class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        if not request.user.is_driver_verified:
+            return Response(
+                {"success": False, "error": "Only verified drivers can create rides"},
+                status=status.HTTP_403_FORBIDDEN
+            )
         serializer = RideDetailsSerializer(
             data=request.data, context={"request": request}
         )
@@ -85,6 +90,15 @@ class RideStatusView(APIView):
         new_status = serializer.validated_data["status"]
         ride.status = new_status
         ride.save()
+
+        if new_status == "COMPLETED":
+            request.user.completed_rides_as_driver += 1
+            request.user.save()
+
+            completed_passengers = ride.requests.filter(status="COMPLETED")
+            for passenger_request in completed_passengers:
+                passenger_request.passenger.completed_rides_as_passenger += 1
+                passenger_request.passenger.save()
 
         if new_status in ["COMPLETED", "CANCELLED"]:
             ride.requests.filter(status__in=["CONFIRMED", "IN_VEHICLE"]).update(

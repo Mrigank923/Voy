@@ -35,6 +35,10 @@ class UserSerializer(serializers.ModelSerializer):
             "is_driver_verified",
             "rating_as_driver",
             "rating_as_passenger",
+            "vehicle_number",
+            "vehicle_model",
+            "completed_rides_as_driver",
+            "completed_rides_as_passenger",
         )
         read_only_fields = (
             "id",
