@@ -57,7 +57,7 @@ class RideDetailsSerializer(serializers.ModelSerializer):
 
 class RideRequestSerializer(serializers.ModelSerializer):
     passenger_name = serializers.SerializerMethodField()
-    passenger_id = serializers.IntegerField(source='passenger.id', read_only=True)
+    passenger_id = serializers.IntegerField(source="passenger.id", read_only=True)
     pickup_point = PointFieldSerializer()
     dropoff_point = PointFieldSerializer()
 
@@ -232,7 +232,7 @@ class RatingSerializer(serializers.ModelSerializer):
         to_user.save()
 
         return rating
-    
+
 
 class RideStatusDetailsSerializer(serializers.ModelSerializer):
     driver_details = serializers.SerializerMethodField()
@@ -243,32 +243,63 @@ class RideStatusDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model = RideDetails
         fields = [
-            'id', 'driver_details', 'start_location', 'end_location',
-            'start_point', 'end_point', 'start_time', 'available_seats',
-            'status', 'created_at', 'passenger_requests'
+            "id",
+            "driver_details",
+            "start_location",
+            "end_location",
+            "start_point",
+            "end_point",
+            "start_time",
+            "available_seats",
+            "status",
+            "created_at",
+            "passenger_requests",
         ]
 
     def get_driver_details(self, obj):
         return {
-            'id': obj.driver.id,
-            'name': obj.driver.get_full_name() or obj.driver.email,
-            'rating': obj.driver.rating_as_driver,
-            'vehicle_number': obj.driver.vehicle_number,
-            'vehicle_model': obj.driver.vehicle_model,
-            'completed_rides_as_driver': obj.driver.completed_rides_as_driver
+            "id": obj.driver.id,
+            "name": obj.driver.get_full_name() or obj.driver.email,
+            "rating": obj.driver.rating_as_driver,
+            "vehicle_number": obj.driver.vehicle_number,
+            "vehicle_model": obj.driver.vehicle_model,
+            "completed_rides_as_driver": obj.driver.completed_rides_as_driver,
         }
 
     def get_passenger_requests(self, obj):
-        requests = obj.requests.filter(status='CONFIRMED')
-        return [{
-            'request_id': req.id,
-            'passenger_id': req.passenger.id,
-            'passenger_name': req.passenger.get_full_name() or req.passenger.email,
-            'pickup_location': req.pickup_location,
-            'dropoff_location': req.dropoff_location,
-            'seats_needed': req.seats_needed,
-            'status': req.status,
-            'created_at': req.created_at
-        } for req in requests]
+        requests = obj.requests.filter(
+            status__in=["CONFIRMED", "COMPLETED", "IN_VEHICLE"]
+        )
+        return [
+            {
+                "request_id": req.id,
+                "passenger_id": req.passenger.id,
+                "passenger_name": req.passenger.get_full_name() or req.passenger.email,
+                "pickup_location": req.pickup_location,
+                "dropoff_location": req.dropoff_location,
+                "seats_needed": req.seats_needed,
+                "status": req.status,
+                "payment_completed": req.payment_completed,
+                "created_at": req.created_at,
+            }
+            for req in requests
+        ]
 
 
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PassengerRideRequest
+        fields = ["payment_completed"]
+        read_only_fields = ["payment_completed"]
+
+    def update(self, instance, validated_data):
+        if instance.status != "COMPLETED":
+            raise serializers.ValidationError(
+                "Can only complete payment for completed rides"
+            )
+        if instance.payment_completed:
+            raise serializers.ValidationError("Payment already completed")
+
+        instance.payment_completed = True
+        instance.save()
+        return instance
