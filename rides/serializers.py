@@ -175,9 +175,30 @@ class PassengerStatusSerializer(serializers.Serializer):
         return {'message': "Status updated to IN_VEHICLE"}
     
 
+class RideHistorySerializer(serializers.ModelSerializer):
+    driver_name = serializers.SerializerMethodField()
+    passenger_requests = serializers.SerializerMethodField()
+    start_point = PointFieldSerializer()
+    end_point = PointFieldSerializer()
+
+    class Meta:
+        model = RideDetails
+        fields = ['id', 'driver_name', 'start_location', 'end_location', 'start_time', 'status', 
+                  'available_seats', 'start_point', 'end_point', 'passenger_requests']
+    
+
+    
+    def get_driver_name(self, obj):
+        return obj.driver.get_full_name() or obj.driver.email
 
 
-from rest_framework import serializers
+
+    def get_passenger_requests(self, obj):
+        requests = obj.requests.filter(status__in=['CONFIRMED', 'COMPLETED'])
+        return RideRequestSerializer(requests, many=True).data
+
+
+
 
 class EmissionsSavingsSerializer(serializers.Serializer):
     ride_id = serializers.IntegerField()

@@ -10,11 +10,12 @@ from django.shortcuts import get_object_or_404
 from django.contrib.gis.measure import D
 from .models import RideDetails, PassengerRideRequest
 from .serializers import RideDetailsSerializer, RideSearchSerializer, RideRequestSerializer, RideActionSerializer, RideStatusSerializer, PassengerStatusSerializer
-from .serializers import EmissionsSavingsSerializer
+from .serializers import RideHistorySerializer, EmissionsSavingsSerializer
 from rest_framework import serializers
 import json
 from django.contrib.gis.geos import Point
 from rest_framework.views import APIView
+from rest_framework.exceptions import NotFound
 
 
 
@@ -94,16 +95,41 @@ class PassengerStatusView(APIView):
         return Response({'success': True, 'data': result})
     
 
+class RideHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+
+        #  rides where the user is the driver
+        driver_rides = RideDetails.objects.filter(driver=user, status__in=['COMPLETED', 'CANCELLED']) 
+        
+        
+
+        
+        #  rides where the user is a passenger
+        passenger_rides = RideDetails.objects.filter(
+            requests__passenger=user, 
+            requests__status__in=['COMPLETED', 'CANCELLED']
+        ).distinct()
+        
+        
+        driver_data = RideHistorySerializer(driver_rides, many=True).data
+        passenger_data = RideHistorySerializer(passenger_rides, many=True).data
+        
+        return Response({
+            'success': True,
+            'data': {
+                'as_driver': driver_data,
+                'as_passenger': passenger_data
+            }
+        })
 
 
 
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import NotFound
-from .models import RideDetails
-from .serializers import EmissionsSavingsSerializer
-from django.shortcuts import get_object_or_404
+
+
 
 class EmissionsSavingsView(APIView):
     permission_classes = [IsAuthenticated]
@@ -148,3 +174,4 @@ class EmissionsSavingsView(APIView):
             "success": True,
             "data": serializer.data
         })
+
