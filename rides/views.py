@@ -16,6 +16,10 @@ import json
 from django.contrib.gis.geos import Point
 from rest_framework.views import APIView
 
+
+
+
+
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
     
@@ -91,12 +95,55 @@ class PassengerStatusView(APIView):
     
 
 
+
+
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import NotFound
+from .models import RideDetails
+from .serializers import EmissionsSavingsSerializer
+from django.shortcuts import get_object_or_404
+
 class EmissionsSavingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, ride_id):
-        ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
-        serializer = EmissionsSavingsSerializer(ride)
+        # Check if the user is the driver or a passenger
+        ride = None
+        
+        # Check if the user is the driver
+        if request.user.is_authenticated:
+            ride = RideDetails.objects.filter(
+                id=ride_id,
+                driver=request.user
+            ).first()
+        
+       #check if the user is passenger
+        if not ride:
+            ride = RideDetails.objects.filter(
+                id=ride_id,
+                requests__passenger=request.user,
+                requests__status='CONFIRMED'
+            ).first()
+        
+        if not ride:
+            raise NotFound(detail="No matching ride found for the user.")
+
+        
+        distance = ride.calculate_distance()
+        total_participants = ride.requests.filter(status='CONFIRMED').count() + 1  
+        carbon_savings = distance * 411 * (total_participants - 1) / 1000 
+
+        
+        emissions_data = {
+            'ride_id': ride.id,
+            'distance': round(distance, 2),
+            'total_participants': total_participants,
+            'carbon_savings': round(carbon_savings, 2)
+        }
+
+        serializer = EmissionsSavingsSerializer(emissions_data)
         return Response({
             "success": True,
             "data": serializer.data

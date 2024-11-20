@@ -1,8 +1,11 @@
+from django.db.models import Q
+
 from rest_framework import serializers
 from django.contrib.gis.geos import Point
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.measure import D
 from .models import RideDetails, PassengerRideRequest
+
 
 class PointFieldSerializer(serializers.Field):
     def to_representation(self, value):
@@ -172,19 +175,12 @@ class PassengerStatusSerializer(serializers.Serializer):
         return {'message': "Status updated to IN_VEHICLE"}
     
 
+
+
+from rest_framework import serializers
+
 class EmissionsSavingsSerializer(serializers.Serializer):
     ride_id = serializers.IntegerField()
     distance = serializers.FloatField()
     total_participants = serializers.IntegerField()
     carbon_savings = serializers.FloatField()
-
-    def to_representation(self, instance):
-        distance = instance.calculate_distance()
-        total_participants = instance.requests.filter(status='CONFIRMED').count() + 1  
-        carbon_savings = distance * 411 * (total_participants - 1) / 1000  
-
-        return {
-            "ride_id": instance.id,
-            "distance": round(distance, 2),
-            "total_participants": total_participants,
-            "carbon_savings": round(carbon_savings, 2) }
