@@ -2,8 +2,8 @@ from django.urls import path
 
 from rides.consumers import RideLocationConsumer
 
-from .views import (CreateRideRequestView, CreateRideView, FindRidesView,
-                    ListRideRequestsView, ManageRideRequestView,
+from .views import (CompletePaymentView, CreateRideRequestView, CreateRideView,
+                    FindRidesView, ListRideRequestsView, ManageRideRequestView,
                     PassengerStatusView, RateDriverView, RatePassengerView,
                     RideStatusDetailsView, RideStatusView)
 
@@ -56,5 +56,10 @@ urlpatterns = [
         "status/<int:ride_id>/details/",
         RideStatusDetailsView.as_view(),
         name="ride-status-details",
+    ),
+    path(
+        "passenger/request/<int:request_id>/complete-payment/",
+        CompletePaymentView.as_view(),
+        name="complete-payment",
     ),
 ]

@@ -13,10 +13,10 @@ from authentication.models import User
 
 from .models import PassengerRideRequest, RideDetails
 from .serializers import (PassengerListSerializer, PassengerStatusSerializer,
-                          RatingSerializer, RideActionSerializer,
-                          RideDetailsSerializer, RideRequestSerializer,
-                          RideSearchSerializer, RideStatusDetailsSerializer,
-                          RideStatusSerializer)
+                          PaymentSerializer, RatingSerializer,
+                          RideActionSerializer, RideDetailsSerializer,
+                          RideRequestSerializer, RideSearchSerializer,
+                          RideStatusDetailsSerializer, RideStatusSerializer)
 
 
 class CreateRideView(APIView):
@@ -26,7 +26,7 @@ class CreateRideView(APIView):
         if not request.user.is_driver_verified:
             return Response(
                 {"success": False, "error": "Only verified drivers can create rides"},
-                status=status.HTTP_403_FORBIDDEN
+                status=status.HTTP_403_FORBIDDEN,
             )
         serializer = RideDetailsSerializer(
             data=request.data, context={"request": request}
@@ -234,3 +234,16 @@ class RideStatusDetailsView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+
+class CompletePaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        ride_request = get_object_or_404(
+            PassengerRideRequest, id=request_id, passenger=request.user
+        )
+        serializer = PaymentSerializer(ride_request, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"success": True, "data": serializer.data})

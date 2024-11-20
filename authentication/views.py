@@ -23,6 +23,8 @@ from .serializers import (ForgotPasswordSerializer, LoginSerializer,
                           RegisterSerializer, ResetPasswordSerializer,
                           UserSerializer, VerifyEmailOTPSerializer,
                           VerifyOTPSerializer, VerifyPhoneOTPSerializer)
+from .throttles import (AnonOTPThrottle, AnonVerificationThrottle,
+                        UserOTPThrottle, UserVerificationThrottle)
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,7 @@ class RegisterView(APIView):
 
 class VerifyEmailOTPView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [AnonVerificationThrottle, UserVerificationThrottle]
 
     def post(self, request):
         try:
@@ -184,6 +187,7 @@ class VerifyEmailOTPView(APIView):
 
 class VerifyPhoneOTPView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [AnonVerificationThrottle, UserVerificationThrottle]
 
     def post(self, request):
         try:
@@ -574,6 +578,8 @@ class RefreshViewNew(APIView):
 
 
 class ResendOTPView(APIView):
+    throttle_classes = [AnonOTPThrottle, UserOTPThrottle]
+
     def post(self, request):
         email = request.data.get("email")
 
@@ -631,6 +637,7 @@ class ResendOTPView(APIView):
 
 class ResendEmailOTPView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [AnonVerificationThrottle, UserVerificationThrottle]
 
     def post(self, request):
         try:
@@ -682,6 +689,7 @@ class ResendEmailOTPView(APIView):
 
 class ResendPhoneOTPView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [AnonVerificationThrottle, UserVerificationThrottle]
 
     def post(self, request):
         try:
