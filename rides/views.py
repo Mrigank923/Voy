@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 from django.contrib.gis.measure import D
 from .models import RideDetails, PassengerRideRequest
 from .serializers import RideDetailsSerializer, RideSearchSerializer, RideRequestSerializer, RideActionSerializer, RideStatusSerializer, PassengerStatusSerializer
+from .serializers import EmissionsSavingsSerializer
 from rest_framework import serializers
 import json
 from django.contrib.gis.geos import Point
@@ -87,3 +88,16 @@ class PassengerStatusView(APIView):
         serializer.is_valid(raise_exception=True)
         result = serializer.update_status(ride_request)
         return Response({'success': True, 'data': result})
+    
+
+
+class EmissionsSavingsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, ride_id):
+        ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
+        serializer = EmissionsSavingsSerializer(ride)
+        return Response({
+            "success": True,
+            "data": serializer.data
+        })

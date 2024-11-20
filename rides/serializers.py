@@ -170,3 +170,21 @@ class PassengerStatusSerializer(serializers.Serializer):
         ride_request.status = self.validated_data['status']
         ride_request.save()
         return {'message': "Status updated to IN_VEHICLE"}
+    
+
+class EmissionsSavingsSerializer(serializers.Serializer):
+    ride_id = serializers.IntegerField()
+    distance = serializers.FloatField()
+    total_participants = serializers.IntegerField()
+    carbon_savings = serializers.FloatField()
+
+    def to_representation(self, instance):
+        distance = instance.calculate_distance()
+        total_participants = instance.requests.filter(status='CONFIRMED').count() + 1  
+        carbon_savings = distance * 411 * (total_participants - 1) / 1000  
+
+        return {
+            "ride_id": instance.id,
+            "distance": round(distance, 2),
+            "total_participants": total_participants,
+            "carbon_savings": round(carbon_savings, 2) }

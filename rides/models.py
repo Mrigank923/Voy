@@ -37,6 +37,12 @@ class RideDetails(models.Model):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
 
+    
+    def calculate_distance(self):
+        if self.start_point and self.end_point:
+            return self.start_point.distance(self.end_point) * 100  
+        return 0
+
 
 
     class Meta:

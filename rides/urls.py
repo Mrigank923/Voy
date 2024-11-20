@@ -14,7 +14,8 @@ from .views import (
     ManageRideRequestView,
     ListRideRequestsView,
     RideStatusView,
-    PassengerStatusView
+    PassengerStatusView,
+    EmissionsSavingsView
 )
 from rides.consumers import RideLocationConsumer
 urlpatterns = [
@@ -27,6 +28,8 @@ urlpatterns = [
     path('passenger/search/', FindRidesView.as_view(), name='passenger-search-rides'),
     path('passenger/<int:ride_id>/request/', CreateRideRequestView.as_view(), name='passenger-request-ride'),
     path('passenger/request/<int:request_id>/status/', PassengerStatusView.as_view(), name='passenger-update-status'),
-
+    
+    path('emissions-savings/<int:ride_id>/', EmissionsSavingsView.as_view(), name='emissions-savings'),
+    
 ]
 
