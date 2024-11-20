@@ -8,6 +8,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
 
 from authentication.models import User
 
@@ -19,6 +20,8 @@ from .serializers import (PassengerListSerializer, PassengerStatusSerializer,
                           RideStatusDetailsSerializer, RideStatusSerializer)
 
 
+class StandardPagination(PageNumberPagination):
+    page_size = 10  
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -38,14 +41,21 @@ class CreateRideView(APIView):
 
 class FindRidesView(APIView):
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardPagination
 
     def post(self, request):
         serializer = RideSearchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         rides = serializer.get_available_rides()
-        return Response(
-            {"success": True, "data": RideDetailsSerializer(rides, many=True).data}
-        )
+
+        paginator = self.pagination_class()
+        paginated_rides = paginator.paginate_queryset(rides, request)
+        ride_serializer = RideDetailsSerializer(paginated_rides, many=True)
+        
+        return Response({
+            "success": True,
+            "data": ride_serializer.data
+        })
 
 
 class CreateRideRequestView(APIView):
@@ -61,11 +71,22 @@ class CreateRideRequestView(APIView):
 
 class ListRideRequestsView(APIView):
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardPagination
 
     def get(self, request, ride_id):
         ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
         requests = PassengerRideRequest.objects.filter(ride=ride, status="PENDING")
-        return Response(RideRequestSerializer(requests, many=True).data)
+        
+        # Get paginated data
+        paginator = self.pagination_class()
+        paginated_requests = paginator.paginate_queryset(requests, request)
+        serializer = RideRequestSerializer(paginated_requests, many=True)
+        
+        return Response({
+            "success": True,
+            "data": serializer.data
+        })
+
 
 
 class ManageRideRequestView(APIView):
@@ -94,17 +115,17 @@ class RideStatusView(APIView):
         if new_status == "COMPLETED":
             request.user.completed_rides_as_driver += 1
             request.user.save()
-
-            completed_passengers = ride.requests.filter(status="COMPLETED")
-            for passenger_request in completed_passengers:
+            passengers_to_complete = ride.requests.filter(
+                status__in=["CONFIRMED", "IN_VEHICLE"]
+            )
+            for passenger_request in passengers_to_complete:
                 passenger_request.passenger.completed_rides_as_passenger += 1
                 passenger_request.passenger.save()
-
-        if new_status in ["COMPLETED", "CANCELLED"]:
-            ride.requests.filter(status__in=["CONFIRMED", "IN_VEHICLE"]).update(
-                status=new_status
-            )
-
+            passengers_to_complete.update(status=new_status)
+        elif new_status == "CANCELLED":
+            ride.requests.filter(
+                status__in=["CONFIRMED", "IN_VEHICLE"]
+            ).update(status=new_status)
         return Response(
             {
                 "success": True,

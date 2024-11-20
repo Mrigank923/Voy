@@ -267,7 +267,9 @@ class RideStatusDetailsSerializer(serializers.ModelSerializer):
         }
 
     def get_passenger_requests(self, obj):
-        requests = obj.requests.filter(status="CONFIRMED")
+        requests = obj.requests.filter(
+            status__in=["CONFIRMED", "COMPLETED", "IN_VEHICLE"]
+        )
         return [
             {
                 "request_id": req.id,
@@ -277,6 +279,7 @@ class RideStatusDetailsSerializer(serializers.ModelSerializer):
                 "dropoff_location": req.dropoff_location,
                 "seats_needed": req.seats_needed,
                 "status": req.status,
+                "payment_completed": req.payment_completed,
                 "created_at": req.created_at,
             }
             for req in requests
