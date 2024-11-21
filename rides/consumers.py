@@ -14,6 +14,9 @@ from rides.models import PassengerRideRequest, RideDetails
 from .models import RideDetails
 
 
+
+from django.utils import timezone
+
 class RideLocationConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def validate_ride_access(self, user, ride_id):
@@ -127,72 +130,111 @@ class RideLocationConsumer(AsyncWebsocketConsumer):
         )
 
 
-class ChatConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        # Get and validate room name
-        self.room_name = self.scope["url_route"]["kwargs"]["room_name"]
 
-        # Basic validation of room name
-        if not re.match("^[a-zA-Z0-9_-]+$", self.room_name) or len(self.room_name) > 50:
+
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.db import database_sync_to_async
+from django.utils import timezone
+
+class RideChatConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        # Get the authenticated user
+        self.user = self.scope["user"]
+        
+        # Check if user is authenticated
+        if not self.user.is_authenticated:
             await self.close()
             return
 
-        self.room_group_name = f"chat_{self.room_name}"
+        # Extract ride ID from URL
+        self.ride_id = self.scope["url_route"]["kwargs"]["ride_id"]
+
+        # Validate ride access
+        ride_access = await self.check_ride_access(self.ride_id, self.user)
+        if not ride_access:
+            await self.close()
+            return
+
+        # Create room group name
+        self.room_group_name = f"chat_ride_{self.ride_id}"
 
         # Join room group
-        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
+        await self.channel_layer.group_add(
+            self.room_group_name, 
+            self.channel_name
+        )
 
+        # Accept the connection
         await self.accept()
+
+    @database_sync_to_async
+    def check_ride_access(self, ride_id, user):
+        """
+        Verify if user has access to the specific ride
+        """
+        try:
+            # Check if user is the driver
+            ride = RideDetails.objects.get(id=ride_id)
+            if ride.driver == user:
+                return True
+            
+            # Check if user is a confirmed passenger
+            passenger_request = PassengerRideRequest.objects.filter(
+                ride_id=ride_id, 
+                passenger=user, 
+                status__in=['CONFIRMED', 'IN_VEHICLE']
+            ).exists()
+            
+            return passenger_request or user.is_staff or user.is_superuser
+        
+        except RideDetails.DoesNotExist:
+            return False
 
     async def disconnect(self, close_code):
         # Leave room group
-        if hasattr(self, "room_group_name"):
+        if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(
-                self.room_group_name, self.channel_name
+                self.room_group_name, 
+                self.channel_name
             )
 
     async def receive(self, text_data):
         try:
-            #  received data
+            # Parse incoming message
             data = json.loads(text_data)
             message = data.get("message", "").strip()
-            username = data.get("username")
 
             # Validate message
             if not message or len(message) > 1000:
                 return
 
-            # Get the user's email and timestamp
-            user_email = self.scope["user"].email
-            timestamp = datetime.now().isoformat()
+            # Prepare message data
+            message_data = {
+                "type": "chat_message",
+                "user_email": self.user.email, 
+                "message": message,
+                "timestamp": timezone.now().isoformat()
+            }
 
             # Send message to room group
             await self.channel_layer.group_send(
                 self.room_group_name,
-                {
-                    "type": "chat_message",
-                    "message": message,
-                    "username": username,
-                    "user_email": user_email,
-                    "timestamp": timestamp,
-                },
+                message_data
             )
 
         except json.JSONDecodeError:
-            await self.send(text_data=json.dumps({"error": "Invalid message format"}))
+            await self.send(text_data=json.dumps({
+                "error": "Invalid message format"
+            }))
         except Exception as e:
+            # Log the error (in a real-world scenario)
             print(f"Error in receive: {e}")
 
     async def chat_message(self, event):
         # Send message to WebSocket
-        await self.send(
-            text_data=json.dumps(
-                {
-                    "type": "chat_message",
-                    "message": event["message"],
-                    "username": event["username"],
-                    "user_email": event["user_email"],
-                    "timestamp": event["timestamp"],
-                }
-            )
-        )
+        await self.send(text_data=json.dumps({
+            "user_email": event["user_email"],
+            "message": event["message"],
+            "timestamp": event["timestamp"]
+        }))
