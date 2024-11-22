@@ -3,9 +3,10 @@ from django.urls import path
 from rides.consumers import RideLocationConsumer
 
 from .views import (CompletePaymentView, CreateRideRequestView, CreateRideView,
-                    FindRidesView, ListRideRequestsView, ManageRideRequestView,
-                    PassengerStatusView, RateDriverView, RatePassengerView,
-                    RideStatusDetailsView, RideStatusView,RideHistoryView,EmissionsSavingsView)
+                    EmissionsSavingsView, FindRidesView, ListRideRequestsView,
+                    ManageRideRequestView, PassengerStatusView, RateDriverView,
+                    RatePassengerView, RideHistoryView, RideStatusDetailsView,
+                    RideStatusView)
 
 urlpatterns = [
     # driver patterns wil the these

@@ -7,142 +7,28 @@ from channels.db import database_sync_to_async
 from channels.exceptions import StopConsumer
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.gis.geos import Point
+from django.utils import timezone
 
 from rides import consumers
-from rides.models import PassengerRideRequest, RideDetails
+from rides.models import PassengerRideRequest, RideDetails,ChatMessage
 
 from .models import RideDetails
+from django.contrib.auth import get_user_model
+
+
+from django.contrib.auth.models import User
 
 
 
-from django.utils import timezone
+
+
+User = get_user_model()
 
 class RideLocationConsumer(AsyncWebsocketConsumer):
-    @database_sync_to_async
-    def validate_ride_access(self, user, ride_id):
-        """
-        Validate whether the user has access to the specified ride.
-        """
-        is_driver = RideDetails.objects.filter(id=ride_id, driver=user).exists()
-        is_confirmed_passenger = PassengerRideRequest.objects.filter(
-            ride_id=ride_id, passenger=user, status="CONFIRMED"
-        ).exists()
-        return is_driver or is_confirmed_passenger
-
-    @database_sync_to_async
-    def update_ride_location(self, ride_id, latitude, longitude):
-        """
-        Update the ride's location with new latitude and longitude.
-        """
-        try:
-            ride = RideDetails.objects.get(id=ride_id)
-            ride.start_point = Point(longitude, latitude, srid=4326)
-            ride.save()
-            return True
-        except RideDetails.DoesNotExist:
-            return False
-
     async def connect(self):
-        user = self.scope["user"]
-
-        # Check if user is authenticated
-        if not user.is_authenticated:
-            await self.close(code=4001)
-            return
-
-        # Get ride_id from URL and validate access
-        self.ride_id = self.scope["url_route"]["kwargs"]["ride_id"]
-        if not await self.validate_ride_access(user, self.ride_id):
-            await self.close(code=4003)
-            return
-
-        # Join the ride group
-        self.ride_group_name = f"ride_{self.ride_id}"
-        await self.channel_layer.group_add(self.ride_group_name, self.channel_name)
-        await self.accept()
-
-    async def disconnect(self, close_code):
-        if hasattr(self, "ride_group_name"):
-            await self.channel_layer.group_discard(
-                self.ride_group_name, self.channel_name
-            )
-        raise StopConsumer()
-
-    async def receive(self, text_data):
-        try:
-            data = json.loads(text_data)
-            latitude = data.get("latitude")
-            longitude = data.get("longitude")
-
-            # Validate latitude and longitude
-            if not (-90 <= float(latitude) <= 90 and -180 <= float(longitude) <= 180):
-                raise ValueError("Invalid coordinates")
-
-            # Update ride location
-            updated = await self.update_ride_location(self.ride_id, latitude, longitude)
-            if not updated:
-                await self.send(
-                    json.dumps({"type": "error", "message": "Ride not found"})
-                )
-                await self.close(code=4004)
-                return
-
-            #  location update
-            timestamp = datetime.now().isoformat()
-            user_email = self.scope["user"].email
-            await self.channel_layer.group_send(
-                self.ride_group_name,
-                {
-                    "type": "send_location",
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "timestamp": timestamp,
-                    "user_email": user_email,
-                },
-            )
-
-        except json.JSONDecodeError:
-            await self.send(
-                json.dumps({"type": "error", "message": "Invalid JSON format"})
-            )
-        except ValueError as e:
-            await self.send(json.dumps({"type": "error", "message": str(e)}))
-        except Exception as e:
-            print(f"Error in receive: {e}")
-            await self.send(
-                json.dumps({"type": "error", "message": "An error occurred"})
-            )
-
-    async def send_location(self, event):
-        """
-        Send location updates to WebSocket clients.
-        """
-        await self.send(
-            json.dumps(
-                {
-                    "type": "location_update",
-                    "latitude": event["latitude"],
-                    "longitude": event["longitude"],
-                    "timestamp": event["timestamp"],
-                    "user_email": event["user_email"],
-                }
-            )
-        )
-
-
-
-
-import json
-from channels.generic.websocket import AsyncWebsocketConsumer
-from channels.db import database_sync_to_async
-from django.utils import timezone
-
-class RideChatConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        # Get the authenticated user
         self.user = self.scope["user"]
-        
-        # Check if user is authenticated
+
+        # Ensure user is authenticated
         if not self.user.is_authenticated:
             await self.close()
             return
@@ -150,91 +36,279 @@ class RideChatConsumer(AsyncWebsocketConsumer):
         # Extract ride ID from URL
         self.ride_id = self.scope["url_route"]["kwargs"]["ride_id"]
 
+        print(f"User {self.user.email} attempting to connect to ride {self.ride_id}")
+
         # Validate ride access
-        ride_access = await self.check_ride_access(self.ride_id, self.user)
-        if not ride_access:
+        access_details = await self.get_ride_access_details()
+        if not access_details['has_access']:
+            print(f"Access Denied for user {self.user.email} to ride {self.ride_id}")
             await self.close()
             return
 
-        # Create room group name
-        self.room_group_name = f"chat_ride_{self.ride_id}"
+        self.is_driver = access_details['is_driver']
+        self.room_group_name = f"ride_location_{self.ride_id}"
+
+        print(f"User {self.user.email} connecting to room {self.room_group_name}")
 
         # Join room group
         await self.channel_layer.group_add(
-            self.room_group_name, 
+            self.room_group_name,
             self.channel_name
         )
-
-        # Accept the connection
         await self.accept()
 
     @database_sync_to_async
-    def check_ride_access(self, ride_id, user):
+    def get_ride_access_details(self):
         """
-        Verify if user has access to the specific ride
+        Validate user access to the ride location updates.
         """
         try:
-            # Check if user is the driver
-            ride = RideDetails.objects.get(id=ride_id)
-            if ride.driver == user:
-                return True
-            
-            # Check if user is a confirmed passenger
+            ride = RideDetails.objects.get(id=self.ride_id)
+
+            # Check if the user is the driver
+            if ride.driver == self.user:
+                print(f"User {self.user.email} is the driver of ride {self.ride_id}")
+                return {'has_access': True, 'is_driver': True}
+
+            # Check if the user is a confirmed passenger
             passenger_request = PassengerRideRequest.objects.filter(
-                ride_id=ride_id, 
-                passenger=user, 
+                ride=ride,
+                passenger=self.user,
                 status__in=['CONFIRMED', 'IN_VEHICLE']
-            ).exists()
-            
-            return passenger_request or user.is_staff or user.is_superuser
-        
+            ).first()
+            if passenger_request:
+                print(f"User {self.user.email} is a confirmed passenger of ride {self.ride_id}")
+                return {'has_access': True, 'is_driver': False}
+
+            print(f"User {self.user.email} is neither the driver nor a confirmed passenger of ride {self.ride_id}")
+            return {'has_access': False, 'is_driver': False}
+
         except RideDetails.DoesNotExist:
-            return False
+            print(f"Ride {self.ride_id} does not exist")
+            return {'has_access': False, 'is_driver': False}
 
     async def disconnect(self, close_code):
-        # Leave room group
         if hasattr(self, 'room_group_name'):
             await self.channel_layer.group_discard(
-                self.room_group_name, 
+                self.room_group_name,
                 self.channel_name
             )
+            print(f"User {self.user.email} disconnected from room {self.room_group_name}")
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        latitude = data.get("latitude")
+        longitude = data.get("longitude")
+
+        print(f"Received location update from user {self.user.email}: {latitude}, {longitude}")
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "location_message",
+                "latitude": latitude,
+                "longitude": longitude,
+                "user_id": self.user.id,
+                "user_email": self.user.email,
+            }
+        )
+
+    async def location_message(self, event):
+        await self.send(text_data=json.dumps({
+            "latitude": event["latitude"],
+            "longitude": event["longitude"],
+            "user_id": event["user_id"],
+            "user_email": event["user_email"],
+        }))
+
+
+
+
+User = get_user_model()
+
+class RideChatConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.user = self.scope["user"]
+
+        # Ensure user is authenticated
+        if not self.user.is_authenticated:
+            await self.close()
+            return
+
+        # Extract ride ID and partner ID from URL
+        self.ride_id = self.scope["url_route"]["kwargs"]["ride_id"]
+        self.partner_id = self.scope["url_route"]["kwargs"]["partner_id"]
+
+        print(f"User {self.user.id} attempting to connect to ride {self.ride_id} with partner {self.partner_id}")
+
+        # Validate chat access
+        chat_details = await self.get_chat_details()
+        if not chat_details['has_access']:
+            print(f"Access denied for user {self.user.id} to ride {self.ride_id}")
+            await self.close()
+            return
+
+        self.is_driver = chat_details['is_driver']
+
+        # Create room group name for each driver-passenger pair
+        self.room_group_name = f"chat_ride_{self.ride_id}_user_{min(self.user.id, self.partner_id)}_{max(self.user.id, self.partner_id)}"
+
+        print(f"User {self.user.id} connecting to room {self.room_group_name}")
+
+        # Join room group
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+
+        # Notify about the connection
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "chat_message",
+                "message": f"{'Driver' if self.is_driver else 'Passenger'} connected",
+                "user_id": self.user.id,
+                
+                "timestamp": timezone.now().isoformat()
+            }
+        )
+
+    @database_sync_to_async
+    def get_chat_details(self):
+        """
+        Validate user access to the ride chat and determine the chat partner.
+        """
+        try:
+            ride = RideDetails.objects.get(id=self.ride_id)
+            partner = User.objects.get(id=self.partner_id)
+
+            # Check if the user is the driver and the partner is a confirmed passenger
+            if ride.driver == self.user:
+                passenger_request = PassengerRideRequest.objects.filter(
+                    ride=ride,
+                    passenger=partner,
+                    status__in=['CONFIRMED', 'IN_VEHICLE']
+                ).first()
+                if passenger_request:
+                    print(f"Driver {self.user.id} found confirmed passenger {partner.id} for ride {self.ride_id}")
+                    return {'has_access': True, 'is_driver': True}
+                else:
+                    print(f"No confirmed or in-vehicle passenger found for driver {self.user.id} and partner {partner.id}")
+
+            # Check if the user is a confirmed passenger and the partner is the driver
+            if partner == ride.driver:
+                passenger_request = PassengerRideRequest.objects.filter(
+                    ride=ride,
+                    passenger=self.user,
+                    status__in=['CONFIRMED', 'IN_VEHICLE']
+                ).first()
+                if passenger_request:
+                    print(f"Passenger {self.user.id} confirmed for ride {self.ride_id} with driver {partner.id}")
+                    return {'has_access': True, 'is_driver': False}
+                else:
+                    print(f"No confirmed or in-vehicle status for passenger {self.user.id} in ride {self.ride_id}")
+
+            print(f"Access denied: user {self.user.id} is not the driver or a confirmed passenger in ride {self.ride_id}")
+            return {'has_access': False, 'is_driver': False}
+
+        except RideDetails.DoesNotExist:
+            print(f"Ride {self.ride_id} does not exist")
+            return {'has_access': False, 'is_driver': False}
+
+        except User.DoesNotExist:
+            print(f"Partner {self.partner_id} does not exist")
+            return {'has_access': False, 'is_driver': False}
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'room_group_name'):
+            # Notify about the disconnection
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "chat_message",
+                    "message": f"{'Driver' if self.is_driver else 'Passenger'} disconnected",
+                    "user_id": self.user.id,
+                    
+                    "timestamp": timezone.now().isoformat()
+                }
+            )
+
+            # Leave room group
+            await self.channel_layer.group_discard(
+                self.room_group_name,
+                self.channel_name
+            )
+            print(f"User {self.user.id} disconnected from room {self.room_group_name}")
 
     async def receive(self, text_data):
         try:
-            # Parse incoming message
+            # Parse incoming data
             data = json.loads(text_data)
             message = data.get("message", "").strip()
 
-            # Validate message
+            # Validate message length and content
             if not message or len(message) > 1000:
-                return
+                return  # Ignore invalid messages
 
-            # Prepare message data
-            message_data = {
-                "type": "chat_message",
-                "user_email": self.user.email, 
-                "message": message,
-                "timestamp": timezone.now().isoformat()
-            }
+            print(f"Received message from user {self.user.id}: {message}")
 
-            # Send message to room group
+            # Save the message to the database
+            await self.save_message(message)
+
+            # Broadcast the message to the group
             await self.channel_layer.group_send(
                 self.room_group_name,
-                message_data
+                {
+                    "type": "chat_message",
+                    "message": message,
+                    "user_id": self.user.id,
+                    
+                    "timestamp": timezone.now().isoformat()
+                }
             )
 
         except json.JSONDecodeError:
-            await self.send(text_data=json.dumps({
-                "error": "Invalid message format"
-            }))
+            print("Invalid JSON received")
+            await self.send(json.dumps({"error": "Invalid message format"}))
         except Exception as e:
-            # Log the error (in a real-world scenario)
             print(f"Error in receive: {e}")
 
+    @database_sync_to_async
+    def save_message(self, message):
+        """
+        Save the message to the database.
+        """
+        ChatMessage.objects.create(
+            ride_id=self.ride_id,
+            sender=self.user,
+            receiver_id=self.partner_id,
+            message=message
+        )
+        print(f"Message saved to database: {message[:50]}...")
+
     async def chat_message(self, event):
-        # Send message to WebSocket
-        await self.send(text_data=json.dumps({
-            "user_email": event["user_email"],
+        """
+        Handle broadcasting messages to WebSocket clients.
+        """
+        sender_email = await self.get_user_email(event["user_id"])
+
+        # Send the message to WebSocket
+        await self.send(json.dumps({
             "message": event["message"],
+            "user_id": event["user_id"],
+            "user_email": sender_email,
+            
             "timestamp": event["timestamp"]
         }))
+
+    @database_sync_to_async
+    def get_user_email(self, user_id):
+        """
+        Retrieve the user's email address by ID.
+        """
+        try:
+            user = User.objects.get(id=user_id)
+            return user.email
+        except User.DoesNotExist:
+            return "Unknown"

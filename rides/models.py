@@ -91,3 +91,15 @@ class Rating(models.Model):
 
     class Meta:
         unique_together = ["ride", "from_user", "to_user"]
+
+
+# models.py
+class ChatMessage(models.Model):
+    ride = models.ForeignKey(RideDetails, on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
+    receiver = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_messages')
+    message = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['timestamp']

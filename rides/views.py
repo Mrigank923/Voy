@@ -1,40 +1,34 @@
 import json
 
+from django.contrib.gis.db.models.functions import Distance
+from django.contrib.gis.geos import Point
+from django.contrib.gis.measure import D
 from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.contrib.gis.db.models.functions import Distance
-from django.shortcuts import get_object_or_404
-from django.contrib.gis.measure import D
-from .models import RideDetails, PassengerRideRequest
-from .serializers import RideDetailsSerializer, RideSearchSerializer, RideRequestSerializer, RideActionSerializer, RideStatusSerializer, PassengerStatusSerializer
-from .serializers import RideHistorySerializer, EmissionsSavingsSerializer
-from rest_framework import serializers
-import json
-from django.contrib.gis.geos import Point
 from rest_framework.views import APIView
-from rest_framework.pagination import PageNumberPagination
 
 from authentication.models import User
 
 from .models import PassengerRideRequest, RideDetails
-from .serializers import (PassengerListSerializer, PassengerStatusSerializer,
-                          PaymentSerializer, RatingSerializer,
-                          RideActionSerializer, RideDetailsSerializer,
+from .serializers import (EmissionsSavingsSerializer, PassengerListSerializer,
+                          PassengerStatusSerializer, PaymentSerializer,
+                          RatingSerializer, RideActionSerializer,
+                          RideDetailsSerializer, RideHistorySerializer,
                           RideRequestSerializer, RideSearchSerializer,
                           RideStatusDetailsSerializer, RideStatusSerializer)
 
 
 class StandardPagination(PageNumberPagination):
-    page_size = 10  
+    page_size = 10
+
+
 from rest_framework.exceptions import NotFound
-
-
-
 
 
 class CreateRideView(APIView):
@@ -66,11 +60,8 @@ class FindRidesView(APIView):
         paginator = self.pagination_class()
         paginated_rides = paginator.paginate_queryset(rides, request)
         ride_serializer = RideDetailsSerializer(paginated_rides, many=True)
-        
-        return Response({
-            "success": True,
-            "data": ride_serializer.data
-        })
+
+        return Response({"success": True, "data": ride_serializer.data})
 
 
 class CreateRideRequestView(APIView):
@@ -91,17 +82,13 @@ class ListRideRequestsView(APIView):
     def get(self, request, ride_id):
         ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
         requests = PassengerRideRequest.objects.filter(ride=ride, status="PENDING")
-        
+
         # Get paginated data
         paginator = self.pagination_class()
         paginated_requests = paginator.paginate_queryset(requests, request)
         serializer = RideRequestSerializer(paginated_requests, many=True)
-        
-        return Response({
-            "success": True,
-            "data": serializer.data
-        })
 
+        return Response({"success": True, "data": serializer.data})
 
 
 class ManageRideRequestView(APIView):
@@ -138,9 +125,9 @@ class RideStatusView(APIView):
                 passenger_request.passenger.save()
             passengers_to_complete.update(status=new_status)
         elif new_status == "CANCELLED":
-            ride.requests.filter(
-                status__in=["CONFIRMED", "IN_VEHICLE"]
-            ).update(status=new_status)
+            ride.requests.filter(status__in=["CONFIRMED", "IN_VEHICLE"]).update(
+                status=new_status
+            )
         return Response(
             {
                 "success": True,
@@ -284,42 +271,32 @@ class CompletePaymentView(APIView):
         serializer.save()
         return Response({"success": True, "data": serializer.data})
 
-    
 
 class RideHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        
 
         #  rides where the user is the driver
-        driver_rides = RideDetails.objects.filter(driver=user, status__in=['COMPLETED', 'CANCELLED']) 
-        
-        
+        driver_rides = RideDetails.objects.filter(
+            driver=user, status__in=["COMPLETED", "CANCELLED"]
+        )
 
-        
         #  rides where the user is a passenger
         passenger_rides = RideDetails.objects.filter(
-            requests__passenger=user, 
-            requests__status__in=['COMPLETED', 'CANCELLED']
+            requests__passenger=user, requests__status__in=["COMPLETED", "CANCELLED"]
         ).distinct()
-        
-        
+
         driver_data = RideHistorySerializer(driver_rides, many=True).data
         passenger_data = RideHistorySerializer(passenger_rides, many=True).data
-        
-        return Response({
-            'success': True,
-            'data': {
-                'as_driver': driver_data,
-                'as_passenger': passenger_data
+
+        return Response(
+            {
+                "success": True,
+                "data": {"as_driver": driver_data, "as_passenger": passenger_data},
             }
-        })
-
-
-
-
+        )
 
 
 class EmissionsSavingsView(APIView):
@@ -328,41 +305,32 @@ class EmissionsSavingsView(APIView):
     def get(self, request, ride_id):
         # Check if the user is the driver or a passenger
         ride = None
-        
+
         # Check if the user is the driver
         if request.user.is_authenticated:
-            ride = RideDetails.objects.filter(
-                id=ride_id,
-                driver=request.user
-            ).first()
-        
-       #check if the user is passenger
+            ride = RideDetails.objects.filter(id=ride_id, driver=request.user).first()
+
+        # check if the user is passenger
         if not ride:
             ride = RideDetails.objects.filter(
                 id=ride_id,
                 requests__passenger=request.user,
-                requests__status='CONFIRMED'
+                requests__status="CONFIRMED",
             ).first()
-        
+
         if not ride:
             raise NotFound(detail="No matching ride found for the user.")
 
-        
         distance = ride.calculate_distance()
-        total_participants = ride.requests.filter(status='CONFIRMED').count() + 1  
-        carbon_savings = distance * 411 * (total_participants - 1) / 1000 
+        total_participants = ride.requests.filter(status="CONFIRMED").count() + 1
+        carbon_savings = distance * 411 * (total_participants - 1) / 1000
 
-        
         emissions_data = {
-            'ride_id': ride.id,
-            'distance': round(distance, 2),
-            'total_participants': total_participants,
-            'carbon_savings': round(carbon_savings, 2)
+            "ride_id": ride.id,
+            "distance": round(distance, 2),
+            "total_participants": total_participants,
+            "carbon_savings": round(carbon_savings, 2),
         }
 
         serializer = EmissionsSavingsSerializer(emissions_data)
-        return Response({
-            "success": True,
-            "data": serializer.data
-        })
-
+        return Response({"success": True, "data": serializer.data})
