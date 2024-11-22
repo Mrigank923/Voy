@@ -332,8 +332,19 @@ class RideHistorySerializer(serializers.ModelSerializer):
 
 
 
+
+
+class CalculationBreakdownSerializer(serializers.Serializer):
+    distance_km = serializers.FloatField()
+    emission_factor_g_per_km = serializers.IntegerField()
+    confirmed_passengers = serializers.IntegerField()
+    cars_saved = serializers.IntegerField()
+    total_emissions_saved_kg = serializers.FloatField()
+
 class EmissionsSavingsSerializer(serializers.Serializer):
     ride_id = serializers.IntegerField()
     distance = serializers.FloatField()
     total_participants = serializers.IntegerField()
     carbon_savings = serializers.FloatField()
+    calculation_breakdown = CalculationBreakdownSerializer()
+    debug_info = serializers.DictField(required=False)

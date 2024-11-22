@@ -299,38 +299,70 @@ class RideHistoryView(APIView):
         )
 
 
+
 class EmissionsSavingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, ride_id):
-        # Check if the user is the driver or a passenger
-        ride = None
+        try:
+            # Get the ride first
+            ride = RideDetails.objects.select_related('driver').get(id=ride_id)
 
-        # Check if the user is the driver
-        if request.user.is_authenticated:
-            ride = RideDetails.objects.filter(id=ride_id, driver=request.user).first()
+            # Verify user permission
+            if request.user != ride.driver and not ride.requests.filter(
+                passenger=request.user,
+                status__in=[ "COMPLETED"]
+            ).exists():
+                raise NotFound(detail="No matching ride found for the user.")
 
-        # check if the user is passenger
-        if not ride:
-            ride = RideDetails.objects.filter(
-                id=ride_id,
-                requests__passenger=request.user,
-                requests__status="CONFIRMED",
-            ).first()
+            # Get total confirmed passengers including their seats
+            confirmed_requests = ride.requests.filter(status__in=[ "COMPLETED"])
+            confirmed_passengers = sum(req.seats_needed for req in confirmed_requests)
 
-        if not ride:
-            raise NotFound(detail="No matching ride found for the user.")
+            # Calculate total participants (confirmed passengers + driver)
+            total_participants = confirmed_passengers + 1
 
-        distance = ride.calculate_distance()
-        total_participants = ride.requests.filter(status="CONFIRMED").count() + 1
-        carbon_savings = distance * 411 * (total_participants - 1) / 1000
+            # Calculate distance
+            distance = ride.calculate_distance()
 
-        emissions_data = {
-            "ride_id": ride.id,
-            "distance": round(distance, 2),
-            "total_participants": total_participants,
-            "carbon_savings": round(carbon_savings, 2),
-        }
+            # Calculate carbon savings
+            carbon_savings = (distance * 411 * confirmed_passengers) / 1000
 
-        serializer = EmissionsSavingsSerializer(emissions_data)
-        return Response({"success": True, "data": serializer.data})
+            # Prepare the response data
+            emissions_data = {
+                "ride_id": ride.id,
+                "distance": round(distance, 2),
+                "total_participants": total_participants,
+                "carbon_savings": round(carbon_savings, 2),
+                "calculation_breakdown": {
+                    "distance_km": round(distance, 2),
+                    "emission_factor_g_per_km": 411,
+                    "confirmed_passengers": confirmed_passengers,
+                    "cars_saved": confirmed_passengers,
+                    "total_emissions_saved_kg": round(carbon_savings, 2)
+                }
+            }
+
+            serializer = EmissionsSavingsSerializer(emissions_data)
+
+            return Response({
+                "success": True,
+                "data": serializer.data
+            })
+
+        except RideDetails.DoesNotExist:
+            return Response({
+                "success": False,
+                "error": "Ride not found"
+            }, status=404)
+            
+        except Exception as e:
+            return Response({
+                "success": False,
+                "error": str(e),
+                "detail": {
+                    "error_type": type(e).__name__,
+                    "ride_id": ride_id,
+                    "user_id": request.user.id
+                }
+            }, status=500)
