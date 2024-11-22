@@ -32,12 +32,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 # FIXME this is only for development testing purposes, remove this in main production
 ALLOWED_HOSTS = ["*"]
-
-print("DEBUG from settings:", DEBUG)
 
 # Application definition
 
@@ -187,6 +185,8 @@ REST_FRAMEWORK = {
         "anon": "100/day",
         "user": "1000/day",
     },
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 10,
 }
 
 SIMPLE_JWT = {

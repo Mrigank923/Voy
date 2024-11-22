@@ -1,11 +1,10 @@
 import logging
-import random
 from datetime import timedelta
 
 import cloudinary.uploader
 import requests
 from django.conf import settings
-from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth import authenticate
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
@@ -19,10 +18,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import OTP, User
-from .serializers import (ForgotPasswordSerializer, LoginSerializer,
-                          RegisterSerializer, ResetPasswordSerializer,
-                          UserSerializer, VerifyEmailOTPSerializer,
-                          VerifyOTPSerializer, VerifyPhoneOTPSerializer)
+from .serializers import *
 from .throttles import (AnonOTPThrottle, AnonVerificationThrottle,
                         UserOTPThrottle, UserVerificationThrottle)
 

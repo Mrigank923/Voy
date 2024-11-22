@@ -2,11 +2,7 @@ from django.urls import path
 
 from rides.consumers import RideLocationConsumer
 
-from .views import (CompletePaymentView, CreateRideRequestView, CreateRideView,
-                    EmissionsSavingsView, FindRidesView, ListRideRequestsView,
-                    ManageRideRequestView, PassengerStatusView, RateDriverView,
-                    RatePassengerView, RideHistoryView, RideStatusDetailsView,
-                    RideStatusView)
+from .views import *
 
 urlpatterns = [
     # driver patterns wil the these

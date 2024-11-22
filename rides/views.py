@@ -1,13 +1,6 @@
-import json
-
-from django.contrib.gis.db.models.functions import Distance
-from django.contrib.gis.geos import Point
-from django.contrib.gis.measure import D
 from django.db.models import Q
-from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
-from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,12 +9,7 @@ from rest_framework.views import APIView
 from authentication.models import User
 
 from .models import PassengerRideRequest, RideDetails
-from .serializers import (EmissionsSavingsSerializer, PassengerListSerializer,
-                          PassengerStatusSerializer, PaymentSerializer,
-                          RatingSerializer, RideActionSerializer,
-                          RideDetailsSerializer, RideHistorySerializer,
-                          RideRequestSerializer, RideSearchSerializer,
-                          RideStatusDetailsSerializer, RideStatusSerializer)
+from .serializers import *
 
 
 class StandardPagination(PageNumberPagination):
