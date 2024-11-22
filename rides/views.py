@@ -1,215 +1,356 @@
-from django.shortcuts import render
-
-# Create your views here.
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.contrib.gis.db.models.functions import Distance
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from django.contrib.gis.measure import D
-from .models import RideDetails, PassengerRideRequest
-from .serializers import RideDetailsSerializer, PassengerRideRequestSerializer
-from rest_framework import serializers
-import json
-from django.contrib.gis.geos import Point
+from rest_framework import serializers, status
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from authentication.models import User
+
+from .models import PassengerRideRequest, RideDetails
+from .serializers import *
+
+
+class StandardPagination(PageNumberPagination):
+    page_size = 10
+
+
+from rest_framework.exceptions import NotFound
+
 
 class CreateRideView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request):
-        serializer = RideDetailsSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(driver=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not request.user.is_driver_verified:
+            return Response(
+                {"success": False, "error": "Only verified drivers can create rides"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = RideDetailsSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 class FindRidesView(APIView):
     permission_classes = [IsAuthenticated]
-    
-    def get(self, request):
-        try:
-            #search params
-            pickup_point = json.loads(request.query_params.get('pickup_point'))
-            destination_point = json.loads(request.query_params.get('destination_point'))
-            seats_needed = int(request.query_params.get('seats_needed', 1))
-            search_radius = float(request.query_params.get('radius', 5000))  # 5km default
-            
-            # Convert to Django Point objects
-            pickup = Point(pickup_point['coordinates'][0], pickup_point['coordinates'][1], srid=4326)
-            destination = Point(destination_point['coordinates'][0], destination_point['coordinates'][1], srid=4326)
-            
-            available_rides = RideDetails.objects.filter(
-                status='PENDING',
-                available_seats__gte=seats_needed
-            ).annotate(
-                distance_to_pickup=Distance('start_point', pickup),
-                distance_to_destination=Distance('end_point', destination)
-            ).filter(
-                distance_to_pickup__lte=D(m=search_radius),
-                distance_to_destination__lte=D(m=search_radius)
-            ).order_by('start_time')
+    pagination_class = StandardPagination
 
-            serializer = RideDetailsSerializer(available_rides, many=True)
-            return Response(serializer.data)
+    def post(self, request):
+        serializer = RideSearchSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        rides = serializer.get_available_rides()
 
-        except (json.JSONDecodeError, ValueError) as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        paginator = self.pagination_class()
+        paginated_rides = paginator.paginate_queryset(rides, request)
+        ride_serializer = RideDetailsSerializer(paginated_rides, many=True)
+
+        return Response({"success": True, "data": ride_serializer.data})
 
 
 class CreateRideRequestView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, ride_id):
-        try:
-            ride = get_object_or_404(RideDetails, id=ride_id, status='PENDING')
-            
-            #does a pending request already exist for this ride?
-            existing_request = PassengerRideRequest.objects.filter(
-                passenger=request.user,
-                ride=ride,
-                status='PENDING'
-            ).exists()
-            
-            if existing_request:
-                return Response(
-                    {"error": "You already have a pending request for this ride"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            seats_needed = request.data.get('seats_needed', 1)
-            if seats_needed > ride.available_seats:
-                return Response(
-                    {"error": f"Only {ride.available_seats} seats available"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            request_data = {
-                'ride': ride_id,
-                'seats_needed': seats_needed,
-                'pickup_location': request.data.get('pickup_location'),
-                'dropoff_location': request.data.get('dropoff_location'),
-                'pickup_point': request.data.get('pickup_point'),
-                'dropoff_point': request.data.get('dropoff_point')
-            }
-            
-            serializer = PassengerRideRequestSerializer(data=request_data)
-            if serializer.is_valid():
-                serializer.save(passenger=request.user)
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        except RideDetails.DoesNotExist:
-            return Response(
-                {"error": "Ride not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        data = {**request.data, "ride": ride_id}
+        serializer = RideRequestSerializer(data=data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 class ListRideRequestsView(APIView):
     permission_classes = [IsAuthenticated]
-    
+    pagination_class = StandardPagination
+
     def get(self, request, ride_id):
-        # make sure the user is the driver of the ride
         ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
-        
-        requests = PassengerRideRequest.objects.filter(
-            ride=ride,
-            status='PENDING'
-        )
-        
-        serializer = PassengerRideRequestSerializer(requests, many=True)
-        return Response(serializer.data)
+        requests = PassengerRideRequest.objects.filter(ride=ride, status="PENDING")
+
+        # Get paginated data
+        paginator = self.pagination_class()
+        paginated_requests = paginator.paginate_queryset(requests, request)
+        serializer = RideRequestSerializer(paginated_requests, many=True)
+
+        return Response({"success": True, "data": serializer.data})
+
 
 class ManageRideRequestView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, request_id):
         ride_request = get_object_or_404(PassengerRideRequest, id=request_id)
-        
-        if request.user != ride_request.ride.driver:
-            return Response(
-                {"error": "You are not authorized to manage this request"},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        action = request.data.get('action')
-        if action not in ['accept', 'reject']:
-            return Response(
-                {"error": "Invalid action. Use 'accept' or 'reject'"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        ride = ride_request.ride
-        
-        if action == 'accept':
-            if ride_request.seats_needed > ride.available_seats:
-                return Response(
-                    {"error": f"Only {ride.available_seats} seats available"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            ride_request.status = 'CONFIRMED'
-            ride.available_seats -= ride_request.seats_needed
-            
-        else:  
-            ride_request.status = 'REJECTED'
-        
-        ride_request.save()
-        ride.save()
-        
-        return Response({
-            "message": f"Request {action}ed successfully",
-            "available_seats": ride.available_seats
-        })
+        serializer = RideActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.perform_action(ride_request, request.user)
+        return Response({"success": True, "data": result})
+
 
 class RideStatusView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, ride_id):
-        ride = get_object_or_404(RideDetails, id=ride_id)
-        
-        # Ensure user is the driver
-        if request.user != ride.driver:
-            return Response(
-                {"error": "Only the driver can update ride status"},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        new_status = request.data.get('status')
-        if new_status not in ['ONGOING', 'COMPLETED', 'CANCELLED']:
-            return Response(
-                {"error": "Invalid status"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Update ride status
+        ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
+        serializer = RideStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        new_status = serializer.validated_data["status"]
         ride.status = new_status
         ride.save()
-        
-        # Update all confirmed requests if ride is completed or cancelled
-        if new_status in ['COMPLETED', 'CANCELLED']:
-            ride.requests.filter(status='CONFIRMED').update(status=new_status)
-        
-        return Response({"message": f"Ride status updated to {new_status}"})
-    
+
+        if new_status == "COMPLETED":
+            request.user.completed_rides_as_driver += 1
+            request.user.save()
+            passengers_to_complete = ride.requests.filter(
+                status__in=["CONFIRMED", "IN_VEHICLE"]
+            )
+            for passenger_request in passengers_to_complete:
+                passenger_request.passenger.completed_rides_as_passenger += 1
+                passenger_request.passenger.save()
+            passengers_to_complete.update(status=new_status)
+        elif new_status == "CANCELLED":
+            ride.requests.filter(status__in=["CONFIRMED", "IN_VEHICLE"]).update(
+                status=new_status
+            )
+        return Response(
+            {
+                "success": True,
+                "data": {"message": f"Ride status updated to {new_status}"},
+            }
+        )
+
 
 class PassengerStatusView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, request_id):
-        ride_request = get_object_or_404(PassengerRideRequest, 
-                                       id=request_id,
-                                       passenger=request.user)
-        
-        new_status = request.data.get('status')
-        if new_status != 'IN_VEHICLE':
+        ride_request = get_object_or_404(
+            PassengerRideRequest, id=request_id, passenger=request.user
+        )
+        serializer = PassengerStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.update_status(ride_request)
+        return Response({"success": True, "data": result})
+
+
+class RateDriverView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, ride_id):
+        ride = get_object_or_404(
+            RideDetails,
+            id=ride_id,
+            status="COMPLETED",
+            requests__passenger=request.user,
+            requests__status="COMPLETED",
+        )
+
+        # Check if already rated
+        if ride.rating_set.filter(from_user=request.user, to_user=ride.driver).exists():
             return Response(
-                {"error": "Invalid status"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"success": False, "error": "You have already rated this driver"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
-        ride_request.status = new_status
-        ride_request.save()
-        
-        return Response({"message": "Status updated to IN_VEHICLE"})
+
+        serializer = RatingSerializer(
+            data=request.data,
+            context={"ride": ride, "from_user": request.user, "to_user": ride.driver},
+        )
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response({"success": True, "message": "Driver rated successfully"})
+
+
+class RatePassengerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, ride_id):
+        ride = get_object_or_404(
+            RideDetails, id=ride_id, driver=request.user, status="COMPLETED"
+        )
+
+        unrated_passengers = (
+            User.objects.filter(
+                Passenger_ride_requests__ride=ride,
+                Passenger_ride_requests__status="COMPLETED",
+            )
+            .exclude(
+                ratings_received__ride=ride, ratings_received__from_user=request.user
+            )
+            .distinct()
+        )
+
+        return Response(
+            {
+                "success": True,
+                "data": PassengerListSerializer(unrated_passengers, many=True).data,
+            }
+        )
+
+    def post(self, request, ride_id, passenger_id):
+        ride = get_object_or_404(
+            RideDetails, id=ride_id, driver=request.user, status="COMPLETED"
+        )
+
+        passenger = get_object_or_404(
+            User,
+            id=passenger_id,
+            Passenger_ride_requests__ride=ride,
+            Passenger_ride_requests__status="COMPLETED",
+        )
+
+        if ride.rating_set.filter(from_user=request.user, to_user=passenger).exists():
+            return Response(
+                {"success": False, "error": "You have already rated this passenger"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = RatingSerializer(
+            data=request.data,
+            context={"ride": ride, "from_user": request.user, "to_user": passenger},
+        )
+
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response({"success": True, "message": "Passenger rated successfully"})
+
+
+class RideStatusDetailsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, ride_id):
+        try:
+            ride = (
+                RideDetails.objects.filter(id=ride_id)
+                .filter(Q(driver=request.user) | Q(requests__passenger=request.user))
+                .distinct()
+                .get()
+            )
+
+            serializer = RideStatusDetailsSerializer(ride)
+            return Response({"success": True, "data": serializer.data})
+
+        except RideDetails.DoesNotExist:
+            return Response(
+                {
+                    "success": False,
+                    "error": "Ride not found or you don't have permission to view it",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+
+class CompletePaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id):
+        ride_request = get_object_or_404(
+            PassengerRideRequest, id=request_id, passenger=request.user
+        )
+        serializer = PaymentSerializer(ride_request, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"success": True, "data": serializer.data})
+
+
+class RideHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        #  rides where the user is the driver
+        driver_rides = RideDetails.objects.filter(
+            driver=user, status__in=["COMPLETED", "CANCELLED"]
+        )
+
+        #  rides where the user is a passenger
+        passenger_rides = RideDetails.objects.filter(
+            requests__passenger=user, requests__status__in=["COMPLETED", "CANCELLED"]
+        ).distinct()
+
+        driver_data = RideHistorySerializer(driver_rides, many=True).data
+        passenger_data = RideHistorySerializer(passenger_rides, many=True).data
+
+        return Response(
+            {
+                "success": True,
+                "data": {"as_driver": driver_data, "as_passenger": passenger_data},
+            }
+        )
+
+
+
+class EmissionsSavingsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, ride_id):
+        try:
+            # Get the ride first
+            ride = RideDetails.objects.select_related('driver').get(id=ride_id)
+
+            # Verify user permission
+            if request.user != ride.driver and not ride.requests.filter(
+                passenger=request.user,
+                status__in=[ "COMPLETED"]
+            ).exists():
+                raise NotFound(detail="No matching ride found for the user.")
+
+            # Get total confirmed passengers including their seats
+            confirmed_requests = ride.requests.filter(status__in=[ "COMPLETED"])
+            confirmed_passengers = sum(req.seats_needed for req in confirmed_requests)
+
+            # Calculate total participants (confirmed passengers + driver)
+            total_participants = confirmed_passengers + 1
+
+            # Calculate distance
+            distance = ride.calculate_distance()
+
+            # Calculate carbon savings
+            carbon_savings = (distance * 411 * confirmed_passengers) / 1000
+
+            # Prepare the response data
+            emissions_data = {
+                "ride_id": ride.id,
+                "distance": round(distance, 2),
+                "total_participants": total_participants,
+                "carbon_savings": round(carbon_savings, 2),
+                "calculation_breakdown": {
+                    "distance_km": round(distance, 2),
+                    "emission_factor_g_per_km": 411,
+                    "confirmed_passengers": confirmed_passengers,
+                    "cars_saved": confirmed_passengers,
+                    "total_emissions_saved_kg": round(carbon_savings, 2)
+                }
+            }
+
+            serializer = EmissionsSavingsSerializer(emissions_data)
+
+            return Response({
+                "success": True,
+                "data": serializer.data
+            })
+
+        except RideDetails.DoesNotExist:
+            return Response({
+                "success": False,
+                "error": "Ride not found"
+            }, status=404)
+            
+        except Exception as e:
+            return Response({
+                "success": False,
+                "error": str(e),
+                "detail": {
+                    "error_type": type(e).__name__,
+                    "ride_id": ride_id,
+                    "user_id": request.user.id
+                }
+            }, status=500)
