@@ -91,19 +91,19 @@ class User(AbstractUser):
     )
     emergency_contact_phone = models.CharField(max_length=15, blank=True, null=True)
     drivers_license_image = CloudinaryField("drivers_license", null=True, blank=True)
-    is_driver_verified = models.BooleanField(default=False)
-    is_driver = models.BooleanField(default=False)
+    is_driver_verified = models.BooleanField(default=False, null=True)
+    is_driver = models.BooleanField(default=False, null=True)
     current_role = models.CharField(
         max_length=10,
         choices=[("DRIVER", "Driver"), ("PASSENGER", "Passenger")],
         default="PASSENGER",
     )
-    rating_as_driver = models.FloatField(default=5.0)
-    rating_as_passenger = models.FloatField(default=5.0)
+    rating_as_driver = models.FloatField(default=5.0, blank=True, null=True)
+    rating_as_passenger = models.FloatField(default=5.0, blank=True, null=True)
     vehicle_number = models.CharField(max_length=20, blank=True, null=True)
     vehicle_model = models.CharField(max_length=50, blank=True, null=True)
-    completed_rides_as_driver = models.IntegerField(default=0)
-    completed_rides_as_passenger = models.IntegerField(default=0)
+    completed_rides_as_driver = models.IntegerField(default=0, blank=True, null=True)
+    completed_rides_as_passenger = models.IntegerField(default=0, blank=True, null=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["phone_number"]
