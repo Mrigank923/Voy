@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "rides",
     "django.contrib.gis",
     "channels",
+    "storages",
 ]
 
 MIDDLEWARE = [
@@ -109,24 +110,24 @@ CHANNEL_LAYERS = {
 #     }
 # }
 
-db_config = dj_database_url.parse(config("DATABASE_URL"))
-db_config["ENGINE"] = (
-    "django.contrib.gis.db.backends.postgis"  # Force the engine to use PostGIS
-)
-DATABASES = {"default": db_config}
+# db_config = dj_database_url.parse(config("DATABASE_URL"))
+# db_config["ENGINE"] = (
+#     "django.contrib.gis.db.backends.postgis"  # Force the engine to use PostGIS
+# )
+# DATABASES = {"default": db_config}
 
 
 # local postgresql database
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.contrib.gis.db.backends.postgis',
-#         'NAME': 'voy_db',
-#         'USER': 'voy_user',
-#         'PASSWORD': 'voy_password',
-#         'HOST': 'db',
-#         'PORT': '5432',
-#     }
-# }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'NAME': 'myproject',
+        'USER': 'myprojectuser',
+        'PASSWORD': 'password',
+        'HOST': 'db',
+        'PORT': '5432',
+    }
+}
 GDAL_LIBRARY_PATH = os.getenv("GDAL_LIBRARY_PATH")
 GEOS_LIBRARY_PATH = os.getenv("GEOS_LIBRARY_PATH")
 
@@ -166,8 +167,19 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = "static/"
 
+AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = config("AWS_STORAGE_BUCKET_NAME")
+AWS_S3_REGION_NAME = config("AWS_S3_REGION_NAME")
+AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
+AWS_S3_FILE_OVERWRITE = False
+
+STATIC_URL = "static/"
+STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+
+MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+MEDIA_ROOT = 'media/'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
@@ -188,6 +200,20 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
 }
+
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": {
+            "location": "static"
+        }
+    }
+}
+
+
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=30),

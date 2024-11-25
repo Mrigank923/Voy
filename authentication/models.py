@@ -1,7 +1,6 @@
 import random
 from datetime import timedelta
 
-from cloudinary.models import CloudinaryField
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import IntegrityError, models
@@ -82,7 +81,7 @@ class User(AbstractUser):
     email_verified = models.BooleanField(default=False)
     phone_verified = models.BooleanField(default=False)
     registration_pending = models.BooleanField(default=True)
-    profile_photo = CloudinaryField("profile_photo", null=True, blank=True)
+    profile_photo = models.ImageField(upload_to='profile_photos/', null=True, blank=True)
     gender = models.CharField(
         max_length=10,
         choices=[("MALE", "Male"), ("FEMALE", "Female"), ("OTHER", "Other")],
@@ -90,7 +89,7 @@ class User(AbstractUser):
         null=True,
     )
     emergency_contact_phone = models.CharField(max_length=15, blank=True, null=True)
-    drivers_license_image = CloudinaryField("drivers_license", null=True, blank=True)
+    drivers_license_image = models.ImageField(upload_to='drivers_licenses/', null=True, blank=True)
     is_driver_verified = models.BooleanField(default=False)
     is_driver = models.BooleanField(default=False)
     current_role = models.CharField(
