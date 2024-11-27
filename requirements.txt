@@ -37,6 +37,6 @@ channels==4.0.0
 redis
 daphne
 channels-redis>=4.0.0
-
+whitenoise==6.8.2
 
 
