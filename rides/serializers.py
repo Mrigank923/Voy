@@ -218,16 +218,13 @@ class RatingSerializer(serializers.ModelSerializer):
         )
 
         is_driver_rating = to_user == ride.driver
-        new_rating = (
-            0.7 * to_user.rating_as_driver
-            if is_driver_rating
-            else to_user.rating_as_passenger
-        ) + (0.3 * rating.score)
-
         if is_driver_rating:
+            new_rating = (0.7 * to_user.rating_as_driver) + (0.3 * rating.score)
             to_user.rating_as_driver = round(new_rating, 2)
         else:
+            new_rating = (0.7 * to_user.rating_as_passenger) + (0.3 * rating.score)
             to_user.rating_as_passenger = round(new_rating, 2)
+            
         to_user.save()
 
         return rating

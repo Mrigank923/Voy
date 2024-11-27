@@ -4,10 +4,12 @@ aiohttp-retry
 aiosignal
 asgiref
 attrs
+boto3
 certifi
 charset-normalizer
 dj-database-url
 Django
+django-storages
 djangorestframework
 djangorestframework-simplejwt
 frozenlist
@@ -15,6 +17,7 @@ gunicorn
 idna
 multidict
 packaging
+pillow
 propcache
 PyJWT
 python-decouple
@@ -34,6 +37,6 @@ channels==4.0.0
 redis
 daphne
 channels-redis>=4.0.0
-
+whitenoise==6.8.2
 
 
