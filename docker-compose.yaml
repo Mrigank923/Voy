@@ -21,8 +21,8 @@ services:
       bash -c "
         docker-entrypoint.sh postgres &
         sleep 10 &&
-        psql -U myprojectusesr -d myproject -c 'CREATE EXTENSION IF NOT EXISTS postgis;' &&
-        psql -U myprojectusesr -d myproject -c 'CREATE EXTENSION IF NOT EXISTS postgis_topology;'
+        psql -U myprojectuser -d myproject -c 'CREATE EXTENSION IF NOT EXISTS postgis;' &&
+        psql -U myprojectuser -d myproject -c 'CREATE EXTENSION IF NOT EXISTS postgis_topology;'
         wait
       "
 
