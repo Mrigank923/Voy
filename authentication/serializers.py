@@ -39,6 +39,7 @@ class UserSerializer(serializers.ModelSerializer):
             "vehicle_model",
             "completed_rides_as_driver",
             "completed_rides_as_passenger",
+            "total_seats",
         )
         read_only_fields = (
             "id",
