@@ -4,7 +4,6 @@ from django.contrib.auth.admin import UserAdmin
 
 User = get_user_model()
 
-
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
     list_display = (
@@ -13,10 +12,25 @@ class CustomUserAdmin(UserAdmin):
         "last_name",
         "is_staff",
         "is_active",
+        "email_verified",
+        "phone_verified",
+        "registration_pending",
         "date_joined",
     )
+    
     search_fields = ("email", "first_name", "last_name")
     ordering = ("email",)
+    
+    actions = ['verify_users']
+    
+    def verify_users(self, request, queryset):
+        queryset.update(
+            is_active=True,
+            email_verified=True,
+            phone_verified=True,
+            registration_pending=False
+        )
+    verify_users.short_description = "Verify selected users"
 
     add_fieldsets = (
         (
@@ -29,6 +43,10 @@ class CustomUserAdmin(UserAdmin):
                     "password2",
                     "first_name",
                     "last_name",
+                    "is_active",
+                    "email_verified",
+                    "phone_verified",
+                    "registration_pending",
                 ),
             },
         ),
@@ -37,11 +55,18 @@ class CustomUserAdmin(UserAdmin):
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Personal info", {"fields": ("first_name", "last_name")}),
+        ("Verification status", {
+            "fields": (
+                "is_active",
+                "email_verified",
+                "phone_verified",
+                "registration_pending",
+            )
+        }),
         (
             "Permissions",
             {
                 "fields": (
-                    "is_active",
                     "is_staff",
                     "is_superuser",
                     "groups",
