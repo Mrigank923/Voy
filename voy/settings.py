@@ -14,9 +14,6 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
-import cloudinary
-import cloudinary.api
-import cloudinary.uploader
 import dj_database_url
 from decouple import config
 from django.contrib.gis.gdal import GDAL_VERSION
@@ -175,8 +172,8 @@ AWS_S3_REGION_NAME = config("AWS_S3_REGION_NAME")
 AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com'
 AWS_S3_FILE_OVERWRITE = False
 
-STATIC_URL = "static/"
-STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
+STATIC_ROOT = 'static/'
 
 MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
 MEDIA_ROOT = 'media/'
@@ -240,8 +237,3 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 TWOFACTOR_API_KEY = config("TWOFACTOR_API_KEY")
 
-cloudinary.config(
-    cloud_name=config("CLOUD_NAME"),
-    api_key=config("CLOUD_API_KEY"),
-    api_secret=config("CLOUD_API_SECRET"),
-)

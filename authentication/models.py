@@ -97,12 +97,14 @@ class User(AbstractUser):
         choices=[("DRIVER", "Driver"), ("PASSENGER", "Passenger")],
         default="PASSENGER",
     )
-    rating_as_driver = models.FloatField(default=5.0)
-    rating_as_passenger = models.FloatField(default=5.0)
+    rating_as_driver = models.FloatField(default=0.0)
+    rating_as_passenger = models.FloatField(default=0.0)
     vehicle_number = models.CharField(max_length=20, blank=True, null=True)
     vehicle_model = models.CharField(max_length=50, blank=True, null=True)
     completed_rides_as_driver = models.IntegerField(default=0)
     completed_rides_as_passenger = models.IntegerField(default=0)
+    total_seats = models.IntegerField(default=0)
+
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["phone_number"]
