@@ -1,6 +1,7 @@
 from django.contrib.gis.db.models.functions import Distance
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
+from django.utils import timezone
 from rest_framework import serializers
 
 from authentication.models import User
@@ -112,9 +113,13 @@ class RideSearchSerializer(serializers.Serializer):
 
     def get_available_rides(self):
         data = self.validated_data
+        current_time = timezone.now()
+
         return (
             RideDetails.objects.filter(
-                status="PENDING", available_seats__gte=data["seats_needed"]
+                status="PENDING",
+                available_seats__gte=data["seats_needed"],
+                start_time__gt=current_time  
             )
             .annotate(
                 distance_to_pickup=Distance("start_point", data["pickup_point"]),
@@ -128,6 +133,7 @@ class RideSearchSerializer(serializers.Serializer):
             )
             .order_by("start_time")
         )
+
 
 
 class RideActionSerializer(serializers.Serializer):
