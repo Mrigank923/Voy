@@ -31,6 +31,9 @@ class PointFieldSerializer(serializers.Field):
 
 class RideDetailsSerializer(serializers.ModelSerializer):
     driver_name = serializers.SerializerMethodField()
+    driver_rating = serializers.SerializerMethodField()
+    car_details = serializers.SerializerMethodField()
+    driver_profile_photo = serializers.SerializerMethodField()  # New field for profile photo
     start_point = PointFieldSerializer()
     end_point = PointFieldSerializer()
 
@@ -41,6 +44,23 @@ class RideDetailsSerializer(serializers.ModelSerializer):
 
     def get_driver_name(self, obj):
         return obj.driver.get_full_name() or obj.driver.email
+
+    def get_driver_rating(self, obj):
+        # Return the driver's rating as a driver (rating_as_driver field from the User model)
+        return obj.driver.rating_as_driver
+
+    def get_car_details(self, obj):
+        # Return the driver's car details (vehicle number and model)
+        return {
+            "vehicle_number": obj.driver.vehicle_number,
+            "vehicle_model": obj.driver.vehicle_model,
+        }
+
+    def get_driver_profile_photo(self, obj):
+        # Return the driver's profile photo URL
+        if obj.driver.profile_photo:
+            return obj.driver.profile_photo.url
+        return None  # Return None if no profile photo is uploaded
 
     def create(self, validated_data):
         validated_data["driver"] = self.context["request"].user
