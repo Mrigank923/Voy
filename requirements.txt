@@ -33,6 +33,9 @@ psycopg2-binary>=2.9.9
 cloudinary
 djangorestframework-gis
 channels==4.0.0
+google-auth
+google-auth-oauthlib
+firebase-admin
 
 redis
 daphne

@@ -1,0 +1,79 @@
+from google.oauth2 import service_account
+import google.auth.transport.requests
+import requests
+import os
+
+SCOPES = ['https://www.googleapis.com/auth/firebase.messaging']
+
+def get_firebase_access_token():
+    """
+    Generates an access token for Firebase Cloud Messaging API using the service account file.
+    """
+    credentials = service_account.Credentials.from_service_account_file(
+    os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH'),
+    scopes=SCOPES
+)
+    request = google.auth.transport.requests.Request()
+    credentials.refresh(request)
+    return credentials.token
+
+def send_firebase_notification(fcm_token, title, body):
+    """
+    Sends a notification via Firebase Cloud Messaging HTTP v1 API.
+    """
+    url = "https://fcm.googleapis.com/v1/projects/projectvoy-55d72/messages:send" 
+
+    payload = {
+        "message": {
+            "token": fcm_token,
+            "notification": {
+                "title": title,
+                "body": body
+            }
+        }
+    }
+
+    access_token = get_firebase_access_token()
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        response.raise_for_status()
+
+def send_firebase_notifications(fcm_tokens, title, body):
+    """
+    Sends notifications via Firebase Cloud Messaging HTTP v1 API to multiple tokens.
+    """
+    url = "https://fcm.googleapis.com/v1/projects/projectvoy-55d72/messages:send"  
+
+    # Get the Firebase access token
+    access_token = get_firebase_access_token()
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    responses = []
+    for token in fcm_tokens:
+        payload = {
+            "message": {
+                "token": token,
+                "notification": {
+                    "title": title,
+                    "body": body
+                }
+            }
+        }
+
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            responses.append({"token": token, "status": "success", "response": response.json()})
+        else:
+            responses.append({"token": token, "status": "failure", "error": response.text})
+    
+    return responses

@@ -1,3 +1,5 @@
+firebase_credentials/firebase_credentials.json
+firebase_credentials.json
 docker-compose.yaml
 dockerfile
 .env
