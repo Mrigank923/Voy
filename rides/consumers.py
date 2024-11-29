@@ -6,21 +6,15 @@ from channels.auth import AuthMiddlewareStack
 from channels.db import database_sync_to_async
 from channels.exceptions import StopConsumer
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.contrib.gis.geos import Point
 from django.utils import timezone
 
 from rides import consumers
-from rides.models import PassengerRideRequest, RideDetails,ChatMessage
+from rides.models import ChatMessage, PassengerRideRequest, RideDetails
 
 from .models import RideDetails
-from django.contrib.auth import get_user_model
-
-
-from django.contrib.auth.models import User
-
-
-
-
 
 User = get_user_model()
 
