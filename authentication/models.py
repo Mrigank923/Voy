@@ -127,6 +127,7 @@ class User(AbstractUser):
                 name="unique_verified_phone",
             ),
         ]
+    
 
     @classmethod
     def cleanup_expired_registrations(cls, email=None, phone_number=None):
@@ -170,11 +171,14 @@ class User(AbstractUser):
             return self.created_at < timezone.now() - timedelta(minutes=5)
         return False
 
-    def __str__(self):
-        return self.email
-
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
+    
+    def __str__(self):
+        full_name = self.get_full_name()
+        if full_name:
+            return f"{full_name} ({self.email}) - {self.current_role}"
+        return f"{self.email} - {self.current_role}"
 
     def update_rating(self, new_rating, as_driver=True):
         WEIGHT_NEW = 0.3
@@ -208,6 +212,10 @@ class OTP(models.Model):
     is_verified = models.BooleanField(default=False)
     attempts = models.IntegerField(default=0)
     type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="EMAIL")
+
+    def __str__(self):
+        return f"{self.type} OTP for {self.user.email} ({self.code}) - {'Verified' if self.is_verified else 'Pending'}"
+
 
     def is_valid(self):
         """Check if the OTP is still valid."""
