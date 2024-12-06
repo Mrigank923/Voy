@@ -135,7 +135,8 @@ class RideSearchSerializer(serializers.Serializer):
         data = self.validated_data
         current_time = timezone.now()
 
-        return (
+        # First get all pending rides within radius and seat requirements
+        rides = (
             RideDetails.objects.filter(
                 status="PENDING",
                 available_seats__gte=data["seats_needed"],
@@ -151,8 +152,13 @@ class RideSearchSerializer(serializers.Serializer):
                 distance_to_pickup__lte=D(m=data["radius"]),
                 distance_to_destination__lte=D(m=data["radius"]),
             )
-            .order_by("start_time")
+            # First order by driver_id (for DISTINCT ON) and created_at (for most recent)
+            .order_by('driver_id', '-created_at', 'start_time')
+            .distinct('driver_id')
         )
+
+        return rides
+
 
 
 

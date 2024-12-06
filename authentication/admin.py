@@ -14,29 +14,30 @@ class CustomUserAdmin(UserAdmin):
         "get_full_name",
         "phone_number",
         "account_status",
-        "is_driver",
+        "is_driver_verified",
         "rating_as_driver",
+        "registration_status",  # Added this
         "date_joined",
     )
-    
+
     list_filter = (
         "is_active",
         "is_staff",
-        "is_driver",
+        "is_driver_verified",
         "current_role",
+        "registration_pending",  # Added this
     )
-    
+
     search_fields = (
         "email",
         "first_name",
         "last_name",
         "phone_number",
     )
-    
+
     ordering = ("-date_joined",)
-    
+
     actions = ['verify_users', 'verify_drivers']
-    
     fieldsets = (
         (None, {
             "fields": ("email", "password")
@@ -54,8 +55,9 @@ class CustomUserAdmin(UserAdmin):
                 "is_active",
                 "email_verified",
                 "phone_verified",
-                "is_driver",
+                "is_driver_verified",
                 "current_role",
+                "registration_pending",  # Added this
             )
         }),
         ("Vehicle Info", {
@@ -75,7 +77,7 @@ class CustomUserAdmin(UserAdmin):
             )
         }),
     )
-    
+
     add_fieldsets = (
         (None, {
             "classes": ("wide",),
@@ -87,6 +89,7 @@ class CustomUserAdmin(UserAdmin):
                 "last_name",
                 "phone_number",
                 "is_active",
+                "registration_pending",  # Added this
             ),
         }),
     )
@@ -94,25 +97,35 @@ class CustomUserAdmin(UserAdmin):
     def get_full_name(self, obj):
         return obj.get_full_name() or "-"
     get_full_name.short_description = "Full Name"
-    
+
     def account_status(self, obj):
         if not obj.is_active:
             return format_html('<span style="color: red;">Inactive</span>')
         return format_html('<span style="color: green;">Active</span>')
     account_status.short_description = "Status"
-    
+
+    def registration_status(self, obj):  # Added this method
+        if obj.registration_pending:
+            return format_html('<span style="color: orange;">Pending</span>')
+        return format_html('<span style="color: green;">Complete</span>')
+    registration_status.short_description = "Registration"
+
     def verify_users(self, request, queryset):
         updated = queryset.update(
             is_active=True,
             email_verified=True,
             phone_verified=True,
-            registration_pending=False
+            registration_pending=False  # Added this to ensure registration is completed
         )
         self.message_user(request, f"{updated} users were verified.")
     verify_users.short_description = "Verify selected users"
-    
+
     def verify_drivers(self, request, queryset):
-        updated = queryset.update(is_driver=True, is_driver_verified=True)
+        updated = queryset.update(
+            is_driver=True,
+            is_driver_verified=True,
+            registration_pending=False  # Added this to ensure registration is completed
+        )
         self.message_user(request, f"{updated} users were verified as drivers.")
     verify_drivers.short_description = "Verify selected users as drivers"
 
@@ -127,23 +140,22 @@ class OTPAdmin(admin.ModelAdmin):
         "attempts",
         "created_at",
     )
-    
+
     list_filter = (
         "type",
         "is_verified",
         "created_at",
     )
-    
+
     search_fields = (
         "user__email",
         "user__phone_number",
         "code",
     )
-    
+
     readonly_fields = (
         "code",
         "created_at",
         "attempts",
     )
-    
     ordering = ("-created_at",)
