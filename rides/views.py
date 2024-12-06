@@ -68,28 +68,15 @@ class ListRideRequestsView(APIView):
     pagination_class = StandardPagination
 
     def get(self, request, ride_id):
-        try:
-            ride = RideDetails.objects.get(id=ride_id)
-            
-            if ride.driver != request.user:
-                return Response(
-                    {"success": False, "error": "You are not the driver of this ride"},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+        ride = get_object_or_404(RideDetails, id=ride_id, driver=request.user)
+        requests = PassengerRideRequest.objects.filter(ride=ride, status="PENDING")
 
-            requests = PassengerRideRequest.objects.filter(ride=ride, status="PENDING")
-            
-            paginator = self.pagination_class()
-            paginated_requests = paginator.paginate_queryset(requests, request)
-            serializer = RideRequestSerializer(paginated_requests, many=True)
+        # Get paginated data
+        paginator = self.pagination_class()
+        paginated_requests = paginator.paginate_queryset(requests, request)
+        serializer = RideRequestSerializer(paginated_requests, many=True)
 
-            return Response({"success": True, "data": serializer.data})
-            
-        except RideDetails.DoesNotExist:
-            return Response(
-                {"success": False, "error": "Ride not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        return Response({"success": True, "data": serializer.data})
 
 
 class ManageRideRequestView(APIView):

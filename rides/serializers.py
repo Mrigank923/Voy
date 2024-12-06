@@ -78,6 +78,7 @@ class RideDetailsSerializer(serializers.ModelSerializer):
 class RideRequestSerializer(serializers.ModelSerializer):
     passenger_name = serializers.SerializerMethodField()
     passenger_id = serializers.IntegerField(source="passenger.id", read_only=True)
+    passenger_rating = serializers.SerializerMethodField()
     pickup_point = PointFieldSerializer()
     dropoff_point = PointFieldSerializer()
 
@@ -88,6 +89,9 @@ class RideRequestSerializer(serializers.ModelSerializer):
 
     def get_passenger_name(self, obj):
         return obj.passenger.get_full_name() or obj.passenger.email
+    
+    def get_passenger_rating(self, obj):
+        return obj.passenger.rating_as_passenger
 
     def validate(self, data):
         ride = data["ride"]
