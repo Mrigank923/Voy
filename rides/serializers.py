@@ -31,6 +31,9 @@ class PointFieldSerializer(serializers.Field):
 
 class RideDetailsSerializer(serializers.ModelSerializer):
     driver_name = serializers.SerializerMethodField()
+    driver_rating = serializers.SerializerMethodField()
+    car_details = serializers.SerializerMethodField()
+    driver_profile_photo = serializers.SerializerMethodField()  # New field for profile photo
     start_point = PointFieldSerializer()
     end_point = PointFieldSerializer()
 
@@ -41,6 +44,23 @@ class RideDetailsSerializer(serializers.ModelSerializer):
 
     def get_driver_name(self, obj):
         return obj.driver.get_full_name() or obj.driver.email
+
+    def get_driver_rating(self, obj):
+        # Return the driver's rating as a driver (rating_as_driver field from the User model)
+        return obj.driver.rating_as_driver
+
+    def get_car_details(self, obj):
+        # Return the driver's car details (vehicle number and model)
+        return {
+            "vehicle_number": obj.driver.vehicle_number,
+            "vehicle_model": obj.driver.vehicle_model,
+        }
+
+    def get_driver_profile_photo(self, obj):
+        # Return the driver's profile photo URL
+        if obj.driver.profile_photo:
+            return obj.driver.profile_photo.url
+        return None  # Return None if no profile photo is uploaded
 
     def create(self, validated_data):
         validated_data["driver"] = self.context["request"].user
@@ -58,6 +78,7 @@ class RideDetailsSerializer(serializers.ModelSerializer):
 class RideRequestSerializer(serializers.ModelSerializer):
     passenger_name = serializers.SerializerMethodField()
     passenger_id = serializers.IntegerField(source="passenger.id", read_only=True)
+    passenger_rating = serializers.SerializerMethodField()
     pickup_point = PointFieldSerializer()
     dropoff_point = PointFieldSerializer()
 
@@ -68,6 +89,9 @@ class RideRequestSerializer(serializers.ModelSerializer):
 
     def get_passenger_name(self, obj):
         return obj.passenger.get_full_name() or obj.passenger.email
+    
+    def get_passenger_rating(self, obj):
+        return obj.passenger.rating_as_passenger
 
     def validate(self, data):
         ride = data["ride"]
@@ -115,7 +139,8 @@ class RideSearchSerializer(serializers.Serializer):
         data = self.validated_data
         current_time = timezone.now()
 
-        return (
+        # First get all pending rides within radius and seat requirements
+        rides = (
             RideDetails.objects.filter(
                 status="PENDING",
                 available_seats__gte=data["seats_needed"],
@@ -131,8 +156,13 @@ class RideSearchSerializer(serializers.Serializer):
                 distance_to_pickup__lte=D(m=data["radius"]),
                 distance_to_destination__lte=D(m=data["radius"]),
             )
-            .order_by("start_time")
+            # First order by driver_id (for DISTINCT ON) and created_at (for most recent)
+            .order_by('driver_id', '-created_at', 'start_time')
+            .distinct('driver_id')
         )
+
+        return rides
+
 
 
 
